@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "medium-mining"
+version = "0.1.0"
+description = ""
+authors = ["Moritz Enderle <contact@moritzenderle.com>"]
+readme = "README.md"
+packages = [
+    { include = "scraper", from = "src" },
+    { include = "database", from = "src" }
+]
+
+
+[tool.poetry.dependencies]
+python = "^3.13"
+sqlalchemy = "^2.0.39"
+requests = "^2.32.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
