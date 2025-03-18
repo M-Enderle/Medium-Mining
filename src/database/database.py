@@ -22,6 +22,12 @@ class URL(Base):
     medium_article = relationship("MediumArticle", back_populates="article_url")
     sitemap = relationship("Sitemap", back_populates="urls")
 
+    def __repr__(self):
+        return f"<URL(id={self.id}, url='{self.url}', last_modified='{self.last_modified}', change_freq='{self.change_freq}', priority={self.priority})>"
+    
+    def __str__(self):
+        return self.__repr__()
+
 class Sitemap(Base):
     __tablename__ = 'sitemaps'
     id = Column(Integer, primary_key=True)
@@ -29,6 +35,12 @@ class Sitemap(Base):
     articles_count = Column(Integer)
     # Relationships
     urls = relationship("URL", back_populates="sitemap")  # Single relationship to URL
+
+    def __repr__(self):
+        return f"<Sitemap(id={self.id}, sitemap_url='{self.sitemap_url}', articles_count={self.articles_count})>"
+    
+    def __str__(self):
+        return self.__repr__()
 
 class MediumArticle(Base):
     __tablename__ = 'medium_articles'
@@ -71,6 +83,12 @@ def setup_database(db_path='sqlite:///medium_articles.db'):
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     return engine, Session
+
+def get_session(db_path='sqlite:///medium_articles.db'):
+    """Get a new session for database operations."""
+    engine, Session = setup_database(db_path)
+    session = Session()
+    return session
 
 if __name__ == "__main__":
     setup_database()

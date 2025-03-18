@@ -5,8 +5,6 @@ import requests
 import logging
 import random
 import time
-from urllib.parse import urljoin
-from typing import Optional
 
 SITEMAP_URL = "https://medium.com/sitemap/sitemap.xml"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MediumScraper/1.0)"}
