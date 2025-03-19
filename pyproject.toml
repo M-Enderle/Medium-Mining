@@ -17,7 +17,12 @@ requests = "^2.32.3"
 seaborn = "^0.13.2"
 pandas = "^2.2.3"
 scipy = "^1.15.2"
+duckdb = "^1.2.1"
+duckdb-engine = "^0.15.0"
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
 
 [build-system]
 requires = ["poetry-core"]
