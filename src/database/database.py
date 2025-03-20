@@ -1,7 +1,23 @@
-from sqlalchemy import REAL, Column, ForeignKey, Integer, String, Text, create_engine, DateTime, Boolean
+from sqlalchemy import (
+    REAL,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+
+DATABASE_URL = "sqlite+aiosqlite:///medium_mining.db"  # Corrected database URL
 
 Base = declarative_base()
+async_engine = create_async_engine(DATABASE_URL, echo=False)
+AsyncSessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=async_engine, class_=AsyncSession
+)
 
 
 class URL(Base):
@@ -11,7 +27,8 @@ class URL(Base):
     last_modified = Column(String(50))
     change_freq = Column(String(50))
     priority = Column(REAL)
-    crawled = Column(Boolean, default=False)  # Added crawled column
+    last_crawled = Column(DateTime)
+    crawl_status = Column(String(255))
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"))  # Added foreign key
 
     # Relationships
@@ -57,9 +74,6 @@ class MediumArticle(Base):
     tags = Column(String(255))
     full_article_text = Column(Text)
 
-    last_crawled = Column(DateTime)
-    crawl_status = Column(String(50))
-
     # Relationships
     article_url = relationship("URL", back_populates="medium_article")
     comments = relationship("Comment", order_by="Comment.id", back_populates="article")
@@ -78,20 +92,17 @@ class Comment(Base):
     article = relationship("MediumArticle", back_populates="comments")
 
 
-def setup_database(db_path="sqlite:///medium_articles.db"):
-    """Set up the database and return engine and session factory."""
-    engine = create_engine(db_path, echo=False)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-    return engine, Session
+async def setup_database():
+    """Create the database and tables."""
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
-def get_session(db_path="sqlite:///medium_articles.db"):
-    """Get a new session for database operations."""
-    engine, Session = setup_database(db_path)
-    session = Session()
-    return session
+async def get_session():  # Changed to async
+    async with AsyncSessionLocal() as session:  # Use async context manager
+        yield session
 
 
 if __name__ == "__main__":
-    setup_database()
+    import asyncio
+    asyncio.run(setup_database())

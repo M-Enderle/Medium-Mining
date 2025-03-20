@@ -1,11 +1,12 @@
 # __main__.py
 import argparse
+import asyncio
 import logging
 
 from scraper.scrape_sitemaps import retrieve_sitemaps
 
 
-def main():
+async def async_main():
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -19,7 +20,7 @@ def main():
         "--timeout",
         type=float,
         default=0.05,
-        help="Average timeout between requests in seconds (default: 5)",
+        help="Average timeout between requests in seconds (default: 0.05)",
     )
     parser.add_argument(
         "--verbose", action="store_true", help="Enable verbose output to console"
@@ -39,13 +40,18 @@ def main():
     logging.info(
         f"Starting sitemap scraper with timeout average: {args.timeout} seconds"
     )
-    success = retrieve_sitemaps(args.timeout)
+    success = await retrieve_sitemaps(args.timeout)
 
     if success:
         logging.info("Sitemap scraping completed successfully")
     else:
         logging.error("Sitemap scraping failed")
         exit(1)
+
+
+def main():
+    """Entry point for the script - runs the async main function"""
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
