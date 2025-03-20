@@ -2,11 +2,11 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, Float, Fore
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
-DB_PATH = 'duckdb:///medium_articles.duckdb'  # Persistent storage
+DATABASE_URL  = 'duckdb:///medium_articles.duckdb'  # Persistent storage
 Base = declarative_base()
-async_engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(
-    autocommit=False, autoflush=False, bind=async_engine, class_=AsyncSession
+engine = create_engine(DATABASE_URL, echo=False)
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine
 )
 
 # Define ORM models
@@ -59,18 +59,17 @@ class Comment(Base):
     date_posted = Column(String(50))
 
 # Database setup functions
-def setup_database(db_path=DB_PATH):
+def setup_database(db_path=DATABASE_URL):
     """Set up the SQLAlchemy database and create tables."""
-    engine = create_engine(db_path)
+    # Use the existing engine instead of creating a new one
     Base.metadata.create_all(engine)
     return engine
 
-def get_session(db_path=DB_PATH):
+def get_session(db_path=DATABASE_URL):
     """Get a SQLAlchemy session for database operations."""
-    engine = create_engine(db_path)
-    Session = sessionmaker(bind=engine)
-    return Session()
+    # Use the existing SessionLocal
+    return SessionLocal()
 
 if __name__ == "__main__":
     # Set up the database
-    engine = setup_database()
+    setup_database()

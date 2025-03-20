@@ -3,17 +3,17 @@ Helper functions for Medium article scraping.
 Contains extraction and database operations to declutter the main script.
 """
 
-import asyncio
 import json
 import logging
+import signal
+import threading
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from playwright.async_api import Page
+from playwright.sync_api import Page
 from sqlalchemy import func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.database import URL, MediumArticle
+from database.database import URL, MediumArticle, Author
 
 # Configure logging
 logging.basicConfig(
@@ -21,12 +21,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global lock for database operations
-db_lock = asyncio.Lock()
 
-
-async def get_random_urls(
-    session: AsyncSession, count: int = 10
+def get_random_urls(
+    session, count: int = 10
 ) -> List[Tuple[int, str]]:
     """
     Fetch random URLs from the database.
@@ -38,13 +35,10 @@ async def get_random_urls(
     Returns:
         List of tuples containing (url_id, url)
     """
-    result = await session.execute(
-        select(URL.id, URL.url).order_by(func.random()).limit(count)
-    )
-    return [(row[0], row[1]) for row in result]
+    return session.query(URL.id, URL.url).order_by(func.random()).limit(count).all()
 
 
-async def update_url_status(session: AsyncSession, url_id: int, success: bool):
+def update_url_status(session, url_id: int, success: bool):
     """
     Update the URL's last_crawled timestamp and crawl_status.
 
@@ -53,26 +47,21 @@ async def update_url_status(session: AsyncSession, url_id: int, success: bool):
         url_id: ID of the URL to update
         success: Whether the crawl was successful
     """
-    async with db_lock:
-        try:
-            await session.execute(
-                update(URL)
-                .where(URL.id == url_id)
-                .values(
-                    last_crawled=datetime.now(),
-                    crawl_status="Successful" if success else "Failed",
-                )
-            )
-            await session.commit()
+    try:
+        url = session.query(URL).filter(URL.id == url_id).first()
+        if url:
+            url.last_crawled = datetime.now()
+            url.crawl_status = "Successful" if success else "Failed"
+            session.commit()
             logger.info(
                 f"Updated URL {url_id} with status: {'Successful' if success else 'Failed'}"
             )
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Database error for URL {url_id}: {e}")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Database error for URL {url_id}: {e}")
 
 
-async def extract_text(page: Page) -> str:
+def extract_text(page: Page) -> str:
     """
     Extract full article text with better paragraph selection.
 
@@ -82,11 +71,11 @@ async def extract_text(page: Page) -> str:
     Returns:
         Extracted article text as string
     """
-    paragraphs = await page.query_selector_all("article p[data-selectable-paragraph]")
+    paragraphs = page.query_selector_all("article p[data-selectable-paragraph]")
     if not paragraphs:
         logger.debug("No paragraphs found with data-selectable-paragraph attribute")
         # Fall back to generic paragraph selection
-        paragraphs = await page.query_selector_all("article p")
+        paragraphs = page.query_selector_all("article p")
         if not paragraphs:
             logger.debug("No paragraphs found for text extraction")
             return ""
@@ -94,7 +83,7 @@ async def extract_text(page: Page) -> str:
     text_parts = []
     for p in paragraphs:
         try:
-            if text := await p.inner_text():
+            if text := p.inner_text():
                 text_parts.append(text)
         except Exception as e:
             logger.warning(f"Failed to extract text from paragraph: {str(e)}")
@@ -102,7 +91,7 @@ async def extract_text(page: Page) -> str:
     return "\n".join(text_parts)
 
 
-async def extract_metadata(page: Page) -> Dict[str, Any]:
+def extract_metadata(page: Page) -> Dict[str, Any]:
     """
     Extract article metadata from JSON-LD and page elements.
 
@@ -114,7 +103,7 @@ async def extract_metadata(page: Page) -> Dict[str, Any]:
     """
     article_data = {
         "title": "Unknown title",
-        "author_name": "Unknown author",
+        "author": None,  # Changed to match what save_article expects
         "date_published": "Unknown date",
         "date_modified": "Unknown date",
         "description": "No description",
@@ -123,15 +112,16 @@ async def extract_metadata(page: Page) -> Dict[str, Any]:
         "claps": "0",
         "comments_count": 0,
         "tags": "",
-        "full_article_text": "",
+        "full_text": "",  # Changed to match what save_article expects
     }
 
     # Extract JSON-LD data
-    if script := await page.query_selector('script[type="application/ld+json"]'):
+    script = page.query_selector('script[type="application/ld+json"]')
+    if script:
         try:
-            json_ld = json.loads(await script.inner_text())
+            json_ld = json.loads(script.inner_text())
             article_data["title"] = json_ld.get("headline", "Unknown title")
-            article_data["author_name"] = json_ld.get("author", {}).get(
+            article_data["author"] = json_ld.get("author", {}).get(
                 "name", "Unknown author"
             )
             article_data["date_published"] = json_ld.get(
@@ -157,76 +147,108 @@ async def extract_metadata(page: Page) -> Dict[str, Any]:
 
     # Look for the member-only or paywall indicator as a fallback
     try:
-        member_content = await page.query_selector('div[aria-label="Post Preview"]')
+        member_content = page.query_selector('div[aria-label="Post Preview"]')
         if member_content:
             article_data["is_free"] = "Member-Only"
 
-        paywall = await page.query_selector("div.paywall-upsell-container")
+        paywall = page.query_selector("div.paywall-upsell-container")
         if paywall:
             article_data["is_free"] = "Paid"
     except Exception:
         pass
 
     # Extract claps
-    claps_element = await page.query_selector("div.pw-multi-vote-count p")
+    claps_element = page.query_selector("div.pw-multi-vote-count p")
     if claps_element:
-        article_data["claps"] = await claps_element.inner_text()
+        article_data["claps"] = claps_element.inner_text()
 
     # Extract article text using improved method
-    article_data["full_article_text"] = await extract_text(page)
+    article_data["full_text"] = extract_text(page)
 
     # Extract tags
-    tags = await page.query_selector_all('a[href*="/tag/"]')
+    tags = page.query_selector_all('a[href*="/tag/"]')
     article_data["tags"] = (
-        ",".join([await tag.inner_text() for tag in tags]) if tags else ""
+        ",".join([tag.inner_text() for tag in tags]) if tags else ""
     )
 
     return article_data
 
 
-async def save_article(
-    session: AsyncSession, url_id: int, metadata: Dict[str, Any]
-) -> None:
+def save_article(session, url_id: int, metadata: Dict[str, Any]) -> bool:
     """
-    Save article metadata to database.
-
+    Save article metadata to database (synchronous version)
+    
     Args:
-        session: Database session
-        url_id: ID of the URL associated with this article
-        metadata: Dictionary containing article metadata
+        session: SQLAlchemy session
+        url_id: URL ID in database
+        metadata: Dictionary with article metadata
+        
+    Returns:
+        True if successful, False otherwise
     """
-    async with db_lock:
-        try:
-            # Check if article already exists
-            stmt = select(MediumArticle).where(MediumArticle.url_id == url_id)
-            result = await session.execute(stmt)
-            existing = result.scalars().first()
+    try:
+        # Handle author (create if not exists)
+        author = None
+        if metadata.get('author'):
+            author = session.query(Author).filter_by(name=metadata['author']).first()
+            if not author:
+                author = Author(name=metadata['author'])
+                session.add(author)
+                session.flush()  # Get ID without committing
+        
+        # Check if article already exists
+        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        
+        if existing:
+            # Update existing record
+            existing.title = metadata.get('title', '')
+            existing.author_id = author.id if author else None
+            existing.date_published = metadata.get('date_published', '')
+            existing.date_modified = metadata.get('date_modified', '')
+            existing.description = metadata.get('description', '')
+            existing.publisher = metadata.get('publisher', '')
+            existing.is_free = metadata.get('is_free', '')
+            existing.claps = metadata.get('claps', '')
+            existing.comments_count = metadata.get('comments_count', 0)
+            existing.tags = metadata.get('tags', '')
+            existing.full_article_text = metadata.get('full_text', '')
+            logger.debug(f"Updated existing article for URL ID {url_id}")
+        else:
+            # Create article
+            article = MediumArticle(
+                url_id=url_id,
+                title=metadata.get('title', ''),
+                author_id=author.id if author else None,
+                date_published=metadata.get('date_published', ''),
+                date_modified=metadata.get('date_modified', ''),
+                description=metadata.get('description', ''),
+                publisher=metadata.get('publisher', ''),
+                is_free=metadata.get('is_free', ''),
+                claps=metadata.get('claps', ''),
+                comments_count=metadata.get('comments_count', 0),
+                tags=metadata.get('tags', ''),
+                full_article_text=metadata.get('full_text', '')
+            )
+            
+            session.add(article)
+            logger.debug(f"Created new article for URL ID {url_id}")
+        
+        session.commit()
+        logger.info(f"Saved article data for URL ID {url_id}")
+        return True
+        
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Failed to save article: {e}")
+        return False
 
-            if existing:
-                # Update existing record
-                for key, value in metadata.items():
-                    setattr(existing, key, value)
-                logger.debug(f"Updated existing article for URL ID {url_id}")
-            else:
-                # Create new record
-                article = MediumArticle(url_id=url_id, **metadata)
-                session.add(article)
-                logger.debug(f"Created new article for URL ID {url_id}")
 
-            await session.commit()
-            logger.info(f"Saved article data for URL ID {url_id}")
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Error saving article data for URL ID {url_id}: {e}")
-
-
-def setup_signal_handlers(shutdown_event: asyncio.Event) -> None:
+def setup_signal_handlers(shutdown_event: threading.Event) -> None:
     """
     Set up signal handlers for graceful shutdown.
 
     Args:
         shutdown_event: Event to set when shutdown is triggered
     """
-    loop = asyncio.get_event_loop()
-    for sig in (2, 15):  # SIGINT, SIGTERM
-        loop.add_signal_handler(sig, lambda: shutdown_event.set())
+    signal.signal(signal.SIGINT, lambda sig, frame: shutdown_event.set())
+    signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_event.set())
