@@ -1,33 +1,21 @@
-import asyncio, random, os, signal
+import asyncio, random
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
 from playwright.async_api import async_playwright, Browser
-from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.database import URL, AsyncSessionLocal
+from database.database import AsyncSessionLocal
+from scraper.medium_helpers import (
+    get_random_urls, update_url_status, extract_metadata, 
+    save_article, setup_signal_handlers
+)
 
 # Setup constants and state
 SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path("./screenshots")
 MAX_CONCURRENT = 10
-db_lock, shutdown_event = asyncio.Lock(), asyncio.Event()
-
-async def get_random_urls(session: AsyncSession, count: int = 10) -> List[Tuple[int, str]]:
-    result = await session.execute(select(URL.id, URL.url).order_by(func.random()).limit(count))
-    return [(row[0], row[1]) for row in result]
-
-async def update_url_status(session: AsyncSession, url_id: int, success: bool):
-    async with db_lock:
-        try:
-            await session.execute(update(URL).where(URL.id == url_id)
-                                .values(last_crawled=datetime.now(), 
-                                        crawl_status="Successful" if success else "Failed"))
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            print(f"DB error for {url_id}: {e}")
+shutdown_event = asyncio.Event()
 
 async def take_screenshot(url_data: Tuple[int, str], browser: Browser, semaphore: asyncio.Semaphore, 
                          index: int, session: AsyncSession):
@@ -50,6 +38,11 @@ async def take_screenshot(url_data: Tuple[int, str], browser: Browser, semaphore
                 await page.goto(url, wait_until="networkidle", timeout=30000)
                 await page.mouse.wheel(0, random.randint(100, 300))
                 
+                # Extract article metadata
+                article_metadata = await extract_metadata(page)
+                await save_article(session, url_id, article_metadata)
+                
+                # Take screenshot
                 filename = f"{index}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
                 await page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
                 print(f"Screenshot: {filename}")
@@ -67,9 +60,7 @@ async def main():
     browser, tasks = None, []
     
     # Set up signal handlers
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: shutdown_event.set())
+    setup_signal_handlers(shutdown_event)
     
     try:
         async with AsyncSessionLocal() as session:
@@ -87,8 +78,8 @@ async def main():
                 
                 # Wait for completion or shutdown signal
                 done, pending = await asyncio.wait(
-                    tasks, return_when=asyncio.FIRST_COMPLETED if shutdown_event.is_set() 
-                    else asyncio.ALL_COMPLETED
+                    tasks, return_when=asyncio.ALL_COMPLETED if not shutdown_event.is_set() 
+                    else asyncio.FIRST_COMPLETED
                 )
                 
                 # Clean up on shutdown
@@ -97,7 +88,7 @@ async def main():
                     for task in pending:
                         task.cancel()
                 
-                # Close browser safely - no need to check if it's closed
+                # Close browser safely
                 if browser:
                     try:
                         await browser.close()
@@ -110,7 +101,7 @@ async def main():
             try:
                 await browser.close()
             except Exception:
-                pass  # Browser might already be closed
+                pass
 
 if __name__ == "__main__":
     asyncio.run(main())
