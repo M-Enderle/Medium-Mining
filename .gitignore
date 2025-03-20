@@ -174,3 +174,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+.ipynb
+medium_articles.duckdb
+medium_articles.duckdb.wal
+src/database/database_old.py
+medium_articles _test.duckdb
