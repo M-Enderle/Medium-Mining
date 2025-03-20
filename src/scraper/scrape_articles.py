@@ -1,15 +1,16 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 import random
+from datetime import datetime
 
 from playwright.async_api import BrowserContext, Page, async_playwright
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select
 
-from database.database import URL, Comment, MediumArticle, Base, setup_database, DATABASE_URL
+from database.database import (DATABASE_URL, URL, Base, Comment, MediumArticle,
+                               setup_database)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,11 +57,17 @@ async def extract_metadata(page: Page, article_data: dict) -> None:
         try:
             json_ld = json.loads(await script.inner_text())
             article_data["title"] = json_ld.get("headline", "Unknown title")
-            article_data["author_name"] = json_ld.get("author", {}).get("name", "Unknown author")
-            article_data["date_published"] = json_ld.get("datePublished", "Unknown date")
+            article_data["author_name"] = json_ld.get("author", {}).get(
+                "name", "Unknown author"
+            )
+            article_data["date_published"] = json_ld.get(
+                "datePublished", "Unknown date"
+            )
             article_data["date_modified"] = json_ld.get("dateModified", "Unknown date")
             article_data["description"] = json_ld.get("description", "No description")
-            article_data["publisher"] = json_ld.get("publisher", {}).get("name", "Unknown publisher")
+            article_data["publisher"] = json_ld.get("publisher", {}).get(
+                "name", "Unknown publisher"
+            )
             article_data["is_free"] = str(json_ld.get("isAccessibleForFree", "Unknown"))
         except json.JSONDecodeError:
             logging.error("Failed to parse JSON-LD data")
@@ -72,7 +79,9 @@ async def extract_metadata(page: Page, article_data: dict) -> None:
 async def extract_tags(page: Page, article_data: dict) -> None:
     """Extract article tags."""
     tags = await page.query_selector_all('a[href*="/tag/"]')
-    article_data["tags"] = ",".join([await tag.inner_text() for tag in tags]) if tags else ""
+    article_data["tags"] = (
+        ",".join([await tag.inner_text() for tag in tags]) if tags else ""
+    )
 
 
 async def extract_text(page: Page, article_data: dict) -> None:
@@ -93,7 +102,7 @@ async def extract_text(page: Page, article_data: dict) -> None:
     article_data["full_article_text"] = "\n".join(text_parts)
 
 
-async def extract_comments(page: Page, article_data:dict) -> None:
+async def extract_comments(page: Page, article_data: dict) -> None:
     """Extract comments."""
     comments_data = []
     for el in await page.locator("xpath=//pre/ancestor::div[5]").all():
@@ -166,7 +175,9 @@ async def _scroll_to_load_comments(page: Page) -> None:
             logging.warning(f"Failed during scrolling: {e}")
 
 
-async def scrape_article(url: str, context: BrowserContext, semaphore: asyncio.Semaphore) -> dict | None:
+async def scrape_article(
+    url: str, context: BrowserContext, semaphore: asyncio.Semaphore
+) -> dict | None:
     """Scrapes a single article and returns a dictionary with the data."""
     page = None
     try:
@@ -207,7 +218,7 @@ async def insert_article_data(article_data: dict, db_lock: asyncio.Lock):
     async with AsyncSessionLocal() as session:
         async with db_lock:
             try:
-                url_obj = await session.get(URL, article_data['url'])
+                url_obj = await session.get(URL, article_data["url"])
                 if not url_obj:
                     logging.warning(f"URL {article_data['url']} not found.")
                     return
@@ -231,12 +242,14 @@ async def insert_article_data(article_data: dict, db_lock: asyncio.Lock):
 
                 for comment_data in article_data.get("comments", []):
                     comment = Comment(
-                        article_id = article.id,
+                        article_id=article.id,
                         username=comment_data.get("username", "Unknown User"),
                         text=comment_data.get("text", ""),
                         claps=comment_data.get("claps", "0"),
                         full_html_text=comment_data.get("full_html_text", ""),
-                        references_article=comment_data.get("references_article", False),
+                        references_article=comment_data.get(
+                            "references_article", False
+                        ),
                     )
                     await session.add(comment)
 
@@ -248,11 +261,13 @@ async def insert_article_data(article_data: dict, db_lock: asyncio.Lock):
 
             except Exception as e:
                 await session.rollback()
-                logging.exception(f"Error inserting data for {article_data.get('url')}: {e}")
-                if 'url_obj' in locals():
-                   url_obj.crawl_status = f"Failed: {str(e)}"
-                   url_obj.last_crawled = datetime.now()
-                   await session.commit()
+                logging.exception(
+                    f"Error inserting data for {article_data.get('url')}: {e}"
+                )
+                if "url_obj" in locals():
+                    url_obj.crawl_status = f"Failed: {str(e)}"
+                    url_obj.last_crawled = datetime.now()
+                    await session.commit()
 
 
 async def main():
@@ -281,16 +296,18 @@ async def main():
 
             scraping_tasks = []
             for url in urls:
-                scraping_tasks.append(asyncio.create_task(scrape_article(url, context, semaphore)))
-            
+                scraping_tasks.append(
+                    asyncio.create_task(scrape_article(url, context, semaphore))
+                )
+
             scraped_articles = await asyncio.gather(*scraping_tasks)
-            
+
             insertion_tasks = []
             for i, article_data in enumerate(scraped_articles):
                 if article_data:
-                    article_data['url'] = urls[i]
+                    article_data["url"] = urls[i]
                     insertion_tasks.append(insert_article_data(article_data, db_lock))
-            
+
             await asyncio.gather(*insertion_tasks)
 
         except Exception as e:

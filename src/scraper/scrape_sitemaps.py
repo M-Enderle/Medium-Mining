@@ -1,12 +1,13 @@
 # scraper.py
+import asyncio
 import logging
 import random
 import time
 import xml.etree.ElementTree as ET
-import asyncio
+
 import aiohttp
 
-from database.database import URL, Sitemap, AsyncSessionLocal
+from database.database import URL, AsyncSessionLocal, Sitemap
 
 SITEMAP_URL = "https://medium.com/sitemap/sitemap.xml"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MediumScraper/1.0)"}
@@ -36,20 +37,22 @@ async def retrieve_sitemaps(timeout_average: int) -> bool:
                 Sitemap.__table__.select().where(Sitemap.sitemap_url == SITEMAP_URL)
             )
             existing = result.scalar_one_or_none()
-            
+
             if existing:
                 logging.info(f"Master sitemap {SITEMAP_URL} already processed")
                 return True
 
             # Retrieve the master sitemap
             async with aiohttp.ClientSession() as http_session:
-                async with http_session.get(SITEMAP_URL, headers=HEADERS, timeout=10) as response:
+                async with http_session.get(
+                    SITEMAP_URL, headers=HEADERS, timeout=10
+                ) as response:
                     if response.status != 200:
                         logging.error(
                             f"Failed to retrieve master sitemap: {response.status}"
                         )
                         return False
-                    
+
                     content = await response.text()
 
             root = ET.fromstring(content)
@@ -64,28 +67,36 @@ async def retrieve_sitemaps(timeout_average: int) -> bool:
                 for sitemap_url in sitemap_urls:
                     # Check if this sitemap was already processed
                     result = await session.execute(
-                        Sitemap.__table__.select().where(Sitemap.sitemap_url == sitemap_url)
+                        Sitemap.__table__.select().where(
+                            Sitemap.sitemap_url == sitemap_url
+                        )
                     )
                     if result.scalar_one_or_none():
-                        logging.info(f"Sitemap {sitemap_url} already processed, skipping")
+                        logging.info(
+                            f"Sitemap {sitemap_url} already processed, skipping"
+                        )
                         continue
 
                     await asyncio.sleep(get_random_timeout(timeout_average))
 
                     try:
-                        async with http_session.get(sitemap_url, headers=HEADERS, timeout=10) as response:
+                        async with http_session.get(
+                            sitemap_url, headers=HEADERS, timeout=10
+                        ) as response:
                             if response.status != 200:
                                 logging.warning(
                                     f"Failed to retrieve sitemap {sitemap_url}: {response.status}"
                                 )
                                 continue
-                            
+
                             content = await response.text()
 
                         root = ET.fromstring(content)
                         urls = root.findall("ns:url", ns)
 
-                        sitemap = Sitemap(sitemap_url=sitemap_url, articles_count=len(urls))
+                        sitemap = Sitemap(
+                            sitemap_url=sitemap_url, articles_count=len(urls)
+                        )
                         session.add(sitemap)
                         await session.flush()
                         logging.info(
@@ -123,7 +134,9 @@ async def retrieve_sitemaps(timeout_average: int) -> bool:
                         logging.info(f"Successfully processed sitemap: {sitemap_url}")
 
                     except Exception as e:
-                        logging.error(f"Error processing sitemap {sitemap_url}: {str(e)}")
+                        logging.error(
+                            f"Error processing sitemap {sitemap_url}: {str(e)}"
+                        )
                         await session.rollback()
                         continue
 

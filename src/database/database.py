@@ -1,15 +1,7 @@
-from sqlalchemy import (
-    REAL,
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
-)
+from sqlalchemy import (REAL, Boolean, Column, DateTime, ForeignKey, Integer,
+                        String, Text)
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 DATABASE_URL = "sqlite+aiosqlite:///medium_mining.db"  # Corrected database URL
 
@@ -105,4 +97,5 @@ async def get_session():  # Changed to async
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(setup_database())
