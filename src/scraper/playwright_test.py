@@ -1,99 +1,116 @@
-import asyncio
-import os
-import random
+import asyncio, random, os, signal
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
-from playwright.async_api import async_playwright, Browser, Page
-from sqlalchemy import select, func
+from playwright.async_api import async_playwright, Browser
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Import from our database module
 from database.database import URL, AsyncSessionLocal
 
-# Directory to save screenshots
-SCREENSHOT_DIR = Path("/Users/moritz/JKU/sem2/Medium-Mining/screenshots")
-SCREENSHOT_DIR.mkdir(exist_ok=True, parents=True)
+# Setup constants and state
+SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path("./screenshots")
+MAX_CONCURRENT = 10
+db_lock, shutdown_event = asyncio.Lock(), asyncio.Event()
 
-# Configure the maximum concurrent tasks
-MAX_CONCURRENT = 15
+async def get_random_urls(session: AsyncSession, count: int = 10) -> List[Tuple[int, str]]:
+    result = await session.execute(select(URL.id, URL.url).order_by(func.random()).limit(count))
+    return [(row[0], row[1]) for row in result]
 
-async def get_random_urls(session: AsyncSession, count: int = 10) -> List[str]:
-    """Fetch random URLs from the database."""
-    stmt = select(URL.url).order_by(func.random()).limit(count)
-    result = await session.execute(stmt)
-    urls = [row[0] for row in result]
-    return urls
-
-async def take_screenshot(url: str, browser: Browser, semaphore: asyncio.Semaphore, index: int):
-    """Open a page, take a screenshot, and save it."""
-    async with semaphore:
-        # Create a unique context for each page to avoid tracking
-        context = await browser.new_context(
-            viewport={"width": random.randint(1024, 1280), "height": random.randint(768, 900)},
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36",
-            device_scale_factor=random.choice([1, 2]),
-            locale=random.choice(["en-US", "en-GB", "en-CA"]),
-            timezone_id="America/New_York",
-            has_touch=random.choice([True, False])
-        )
-        
-        # Randomize headers and behaviors
-        await context.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        """)
-        
-        page = await context.new_page()
-        
+async def update_url_status(session: AsyncSession, url_id: int, success: bool):
+    async with db_lock:
         try:
-            # Randomize timing to appear more human-like
-            await asyncio.sleep(random.uniform(1, 3))
-            
-            # Navigate with timeout and wait until network is idle
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            
-            # Random scrolling behavior
-            await page.mouse.wheel(0, random.randint(100, 300))
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-            
-            # Take the screenshot
-            filename = f"{index}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-            filepath = SCREENSHOT_DIR / filename
-            await page.screenshot(path=str(filepath), full_page=True)
-            print(f"Screenshot saved: {filepath}")
+            await session.execute(update(URL).where(URL.id == url_id)
+                                .values(last_crawled=datetime.now(), 
+                                        crawl_status="Successful" if success else "Failed"))
+            await session.commit()
         except Exception as e:
-            print(f"Error processing {url}: {e}")
-        finally:
-            await page.close()
-            await context.close()
+            await session.rollback()
+            print(f"DB error for {url_id}: {e}")
+
+async def take_screenshot(url_data: Tuple[int, str], browser: Browser, semaphore: asyncio.Semaphore, 
+                         index: int, session: AsyncSession):
+    if shutdown_event.is_set(): return
+    url_id, url = url_data
+    success = False
+    
+    async with semaphore:
+        try:
+            context = await browser.new_context(
+                viewport={"width": random.randint(1024, 1280), "height": random.randint(768, 900)},
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                locale=random.choice(["en-US", "en-GB"])
+            )
+            await context.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>false});")
+            
+            page = await context.new_page()
+            try:
+                if shutdown_event.is_set(): return
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.mouse.wheel(0, random.randint(100, 300))
+                
+                filename = f"{index}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+                await page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
+                print(f"Screenshot: {filename}")
+                success = True
+            finally:
+                await page.close()
+                await context.close()
+        except Exception as e:
+            print(f"Error on {url}: {e}")
+        
+        if not shutdown_event.is_set():
+            await update_url_status(session, url_id, success)
 
 async def main():
-    """Main function to run the scraping process."""
-    # Get random URLs from database
-    async with AsyncSessionLocal() as session:
-        urls = await get_random_urls(session, count=100)
+    browser, tasks = None, []
     
-    # Create a semaphore to limit concurrent connections
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+    # Set up signal handlers
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda: shutdown_event.set())
     
-    async with async_playwright() as p:
-        # Launch browser with stealth settings
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-features=IsolateOrigins,site-per-process",
-                "--disable-dev-shm-usage"
-            ]
-        )
-        
-        # Process URLs with semaphore control
-        tasks = [take_screenshot(url, browser, semaphore, i) for i, url in enumerate(urls)]
-        await asyncio.gather(*tasks)
-        
-        await browser.close()
+    try:
+        async with AsyncSessionLocal() as session:
+            url_data = await get_random_urls(session, count=100)
+            
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True, 
+                    args=["--disable-blink-features=AutomationControlled"]
+                )
+                
+                semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+                tasks = [asyncio.create_task(take_screenshot(url, browser, semaphore, i, session)) 
+                        for i, url in enumerate(url_data)]
+                
+                # Wait for completion or shutdown signal
+                done, pending = await asyncio.wait(
+                    tasks, return_when=asyncio.FIRST_COMPLETED if shutdown_event.is_set() 
+                    else asyncio.ALL_COMPLETED
+                )
+                
+                # Clean up on shutdown
+                if shutdown_event.is_set():
+                    print("\nShutting down gracefully...")
+                    for task in pending:
+                        task.cancel()
+                
+                # Close browser safely - no need to check if it's closed
+                if browser:
+                    try:
+                        await browser.close()
+                    except Exception as e:
+                        print(f"Error closing browser: {e}")
+                
+    except Exception as e:
+        print(f"Error: {e}")
+        if browser:
+            try:
+                await browser.close()
+            except Exception:
+                pass  # Browser might already be closed
 
 if __name__ == "__main__":
     asyncio.run(main())
