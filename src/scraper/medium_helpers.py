@@ -266,12 +266,15 @@ def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
 def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool:
     """Save article metadata to database."""
     try:
-        # Check if article exists
-        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
-        
+        # Check for empty title and skip if no title exists
+        title = metadata.get("title", "").strip()
+        if not title or title == "Unknown title":
+            logger.warning(f"Skipping article with URL ID {url_id} - No title found")
+            return False
+            
         # Prepare article data with author name directly included
         article_data = {
-            "title": metadata.get("title", ""),
+            "title": title,
             "author_name": metadata.get("author", "Unknown"),  # Store author name directly
             "date_published": metadata.get("date_published", ""),
             "date_modified": metadata.get("date_modified", ""),
@@ -284,63 +287,41 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
             "full_article_text": metadata.get("full_text", ""),
         }
 
+        # Check if article exists - use get() to avoid flush issues
+        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        
+        # Process comments outside the article creation flow
+        comments_to_save = metadata.get("comments", [])
+        
         if existing:
-            # Update existing record
+            # Update existing record - safer than creating a new one
             for key, value in article_data.items():
                 setattr(existing, key, value)
+            article_id = existing.id
         else:
-            # Create new record
+            # Create new record - explicitly commit before handling comments
             article = MediumArticle(url_id=url_id, **article_data)
             session.add(article)
+            session.commit()  # Commit immediately to avoid flush issues
+            article_id = article.id
 
         # Save comments if model exists and comments are available
-        if metadata.get("comments"):
+        if comments_to_save:
             try:
                 # Try to import Comment class
                 from database.database import Comment
-
                 has_comment_model = True
-
-                # Try to discover available fields in Comment model
-                valid_fields = []
-                try:
-                    # Inspect the Comment model's columns
-                    dummy = Comment()
-                    if hasattr(dummy, "__table__") and hasattr(
-                        dummy.__table__, "columns"
-                    ):
-                        valid_fields = [col.name for col in dummy.__table__.columns]
-                    else:
-                        # Alternative approach
-                        valid_fields = [
-                            "article_id",
-                            "username",
-                            "text",
-                            "references_article",
-                        ]
-                except:
-                    # Fallback to basic fields that should exist
-                    valid_fields = [
-                        "article_id",
-                        "username",
-                        "text",
-                        "references_article",
-                    ]
-
-                logger.debug(f"Valid Comment fields: {valid_fields}")
+                
+                # Use a simpler approach to determine valid fields
+                valid_fields = ["article_id", "username", "text", "references_article", "claps", "likes"]
+                
             except (ImportError, AttributeError):
                 has_comment_model = False
                 logger.warning("Comment model not found, skipping comment storage")
 
             if has_comment_model:
-                article_id = existing.id if existing else None
-                # Need to flush to get article ID if it's a new article
-                if not article_id:
-                    session.flush()
-                    article_id = article.id
-
                 comments_saved = 0
-                for comment_data in metadata["comments"]:
+                for comment_data in comments_to_save:
                     try:
                         # Start with required fields
                         filtered_data = {"article_id": article_id}
@@ -349,32 +330,36 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
                         for field, value in {
                             "username": comment_data.get("username", "Unknown"),
                             "text": comment_data.get("text", ""),
-                            "references_article": comment_data.get(
-                                "references_article", False
-                            ),
+                            "references_article": comment_data.get("references_article", False),
                         }.items():
-                            if field in valid_fields:
-                                filtered_data[field] = value
+                            filtered_data[field] = value
 
                         # Special handling for claps/likes field
                         clap_value = comment_data.get("claps", "0")
-                        if "claps" in valid_fields:
-                            filtered_data["claps"] = clap_value
-                        elif "likes" in valid_fields:
-                            filtered_data["likes"] = clap_value
+                        filtered_data["claps"] = clap_value  # Assume claps exists
 
-                        # Create and add comment
+                        # Create and add comment - add and commit in small batches
                         comment = Comment(**filtered_data)
                         session.add(comment)
+                        
+                        # Commit every 10 comments to avoid large transactions
                         comments_saved += 1
+                        if comments_saved % 10 == 0:
+                            session.commit()
+                            
                     except Exception as e:
                         logger.warning(f"Failed to create comment: {e}")
 
-                logger.info(
-                    f"Successfully saved {comments_saved} of {len(metadata['comments'])} comments"
-                )
-
-        session.commit()
+                # Final commit for remaining comments
+                if comments_saved % 10 != 0:
+                    session.commit()
+                    
+                logger.info(f"Successfully saved {comments_saved} of {len(comments_to_save)} comments")
+        
+        # Final commit if not already done
+        if not comments_to_save:
+            session.commit()
+            
         logger.info(f"Saved article data for URL ID {url_id}")
         return True
 
