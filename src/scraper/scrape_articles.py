@@ -198,13 +198,7 @@ def main():
         session = SessionLocal()
         try:
             # Use synchronous function to get URLsw
-            # url_data = get_random_urls(session, count=10)
-            url_data = [
-                (
-                    1,
-                    "https://medium.com/@harendra21/how-i-am-using-a-lifetime-100-free-server-bd241e3a347a",
-                )
-            ]
+            url_data = get_random_urls(session, count=10)
             logging.info(
                 f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
             )
