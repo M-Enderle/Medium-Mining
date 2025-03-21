@@ -9,8 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from database.database import (DATABASE_URL, URL, Base, Comment, MediumArticle,
-                               setup_database)
+from database.database import (
+    DATABASE_URL,
+    URL,
+    Base,
+    Comment,
+    MediumArticle,
+    setup_database,
+)
 
 logging.basicConfig(
     level=logging.INFO,

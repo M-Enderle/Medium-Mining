@@ -17,8 +17,7 @@ from playwright.sync_api import sync_playwright
 from sqlalchemy.orm import Session
 
 from database.database import SessionLocal
-from scraper.medium_helpers import (extract_metadata, save_article,
-                                    setup_signal_handlers)
+from scraper.medium_helpers import extract_metadata, save_article, setup_signal_handlers
 
 logger = logging.getLogger(__name__)
 SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path(
