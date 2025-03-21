@@ -6,7 +6,6 @@ Visits Medium articles, extracts metadata, and takes screenshots.
 import logging
 import random
 import signal
-import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,13 +16,26 @@ from playwright.sync_api import sync_playwright
 from sqlalchemy.orm import Session
 
 from database.database import SessionLocal
-from scraper.medium_helpers import extract_metadata, save_article, setup_signal_handlers
+from scraper.medium_helpers import (
+    extract_metadata_and_comments,
+    persist_article_data,
+    update_url_status,
+    fetch_random_urls,
+)
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("article_scraper.log"),
+        logging.StreamHandler()
+    ]
+)
+
 SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path(
     "./screenshots"
 )
-MAX_CONCURRENT = 10
+MAX_CONCURRENT = 1
 shutdown_event = Event()
 
 # Track performance metrics
@@ -39,7 +51,7 @@ def update_metrics():
         completed_tasks += 1
 
 
-def take_screenshot(
+def process_article(
     url_data,
     browser,
     worker_idx: int,
@@ -61,28 +73,34 @@ def take_screenshot(
     success = False
 
     try:
+        # Use mobile viewport and user agent from the beginning
         context = browser.new_context(
-            viewport={
-                "width": random.randint(1024, 1280),
-                "height": random.randint(768, 900),
-            },
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            viewport={"width": 390, "height": 844},  # iPhone 12 dimensions
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
             locale=random.choice(["en-US", "en-GB"]),
+            device_scale_factor=2.0,  # Retina display simulation
         )
         context.add_init_script(
             "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
         )
 
+        logging.info(f"Using mobile viewport for processing URL: {url}")
+        
         page = context.new_page()
         try:
             # Only log critical information to reduce output noise
-            logger.debug(f"Processing: {url}")
+            logging.debug(f"Processing: {url}")
             page.goto(url, wait_until="networkidle", timeout=30000)
             page.mouse.wheel(0, random.randint(100, 300))
 
-            # Extract and save article data, take screenshot
-            metadata = extract_metadata(page)
-            save_article(session, url_id, metadata)
+            # Extract and save article data, including comments
+            metadata = extract_metadata_and_comments(page)
+            
+            # Additional logging for comments count
+            comment_count = metadata.get("comments_count", 0)
+            logging.info(f"Article '{metadata.get('title', 'Unknown')[:50]}...' has {comment_count} comments")
+            
+            persist_article_data(session, url_id, metadata)
 
             filename = f"{worker_idx}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
             page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
@@ -94,36 +112,19 @@ def take_screenshot(
             page.close()
             context.close()
     except Exception as e:
-        logger.error(f"Error on {url}: {e}")
+        logging.error(f"Error on {url}: {e}")
 
     if not shutdown_event.is_set():
         update_url_status(session, url_id, success)
 
 
-def update_url_status(session, url_id, success):
-    """Update URL processing status synchronously"""
-    from database.database import URL
-
-    try:
-        url = session.query(URL).filter(URL.id == url_id).first()
-        if url:
-            # Update status or other fields as needed
-            session.commit()
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Failed to update URL status: {e}")
-
-
 def get_random_urls(session, count=100):
     """Get random unprocessed URLs synchronously"""
-    from database.database import URL
-
     try:
-        # Synchronous query to get URLs
-        urls = session.query(URL.id, URL.url).limit(count).all()
-        return urls
+        # Using the renamed function
+        return fetch_random_urls(session, count)
     except Exception as e:
-        logger.error(f"Failed to get URLs: {e}")
+        logging.error(f"Failed to get URLs: {e}")
         return []
 
 
@@ -139,13 +140,16 @@ def worker_thread(task_queue, browser_factory, session):
                     break
 
                 url_data, index = task
-                take_screenshot(url_data, browser, index, session)
+                process_article(url_data, browser, index, session)
                 task_queue.task_done()
             except Exception as e:
                 if not shutdown_event.is_set():
-                    logger.error(f"Worker thread error: {e}")
+                    logging.error(f"Worker thread error: {e}")
 
-        browser.close()
+        try:
+            browser.close()
+        except Exception as e:
+            pass
 
 
 def quiet_metrics_monitor(stop_event):
@@ -162,17 +166,17 @@ def display_final_metrics():
     if completed_tasks > 0 and elapsed_time > 0:
         speed = completed_tasks / (elapsed_time / 60)
 
-        logger.info(f"=== FINAL PERFORMANCE SUMMARY ===")
-        logger.info(f"Total processed: {completed_tasks} articles")
-        logger.info(f"Average speed: {speed:.2f} articles/minute")
-        logger.info(f"Total time: {elapsed_time/60:.1f} minutes")
+        logging.info(f"=== FINAL PERFORMANCE SUMMARY ===")
+        logging.info(f"Total processed: {completed_tasks} articles")
+        logging.info(f"Average speed: {speed:.2f} articles/minute")
+        logging.info(f"Total time: {elapsed_time/60:.1f} minutes")
         if elapsed_time > 0 and speed > 0:
-            logger.info(f"Processing time per article: {60/speed:.2f} seconds")
+            logging.info(f"Processing time per article: {60/speed:.2f} seconds")
 
 
 def handle_signal(signum, frame):
     """Signal handler for graceful shutdown"""
-    logger.warning(f"Received signal {signum}, initiating shutdown...")
+    logging.warning(f"Received signal {signum}, initiating shutdown...")
     shutdown_event.set()
 
 
@@ -198,8 +202,9 @@ def main():
         session = SessionLocal()
         try:
             # Use synchronous function to get URLs
-            url_data = get_random_urls(session, count=100)
-            logger.info(
+            # url_data = get_random_urls(session, count=10)
+            url_data = [(1, "https://medium.com/@harendra21/how-i-am-using-a-lifetime-100-free-server-bd241e3a347a")]
+            logging.info(
                 f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
             )
 
@@ -209,7 +214,7 @@ def main():
             # Browser factory function
             def create_browser(playwright):
                 return playwright.chromium.launch(
-                    headless=True,
+                    headless=False,
                     args=["--disable-blink-features=AutomationControlled"],
                 )
 
@@ -244,7 +249,7 @@ def main():
 
             # Wait for completion or shutdown
             if shutdown_event.is_set():
-                logger.warning("Shutting down gracefully...")
+                logging.warning("Shutting down gracefully...")
                 # Don't need to cancel threads as they check shutdown_event
 
             # Wait for threads to finish (with timeout)
@@ -263,16 +268,8 @@ def main():
             session.close()
 
     except Exception as e:
-        logger.error(f"Unhandled error: {e}", exc_info=True)
+        logging.error(f"Unhandled error: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
-    # Configure logging to reduce verbosity
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-    # Set other loggers to WARNING level to reduce noise
-    logging.getLogger("playwright").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-
     main()

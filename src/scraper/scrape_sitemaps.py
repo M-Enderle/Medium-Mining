@@ -15,7 +15,10 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; MediumScraper/1.0)"}
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    filename="sitemap_scraper.log",
+    handlers=[
+        logging.FileHandler("sitemap_scraper.log"),
+        logging.StreamHandler()
+    ]
 )
 
 
