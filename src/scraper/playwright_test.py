@@ -175,7 +175,7 @@ def handle_signal(signum, frame):
     shutdown_event.set()
 
 
-def main():
+def main(url_count=100):
     """
     Main execution function. Sets up browser, creates threads, and manages execution.
     Handles graceful shutdown on interruption.
@@ -197,7 +197,7 @@ def main():
         session = SessionLocal()
         try:
             # Use synchronous function to get URLs
-            url_data = get_random_urls(session, count=100)
+            url_data = get_random_urls(session, count=url_count)
             logger.info(
                 f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
             )
@@ -276,4 +276,4 @@ if __name__ == "__main__":
     logging.getLogger("playwright").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     
-    main()
+    main(10000)
