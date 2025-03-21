@@ -1,328 +1,276 @@
-import asyncio
-import json
+"""
+Synchronous Medium scraper using Playwright.
+Visits Medium articles, extracts metadata, and takes screenshots.
+"""
+
 import logging
 import random
+import signal
+import time
 from datetime import datetime
+from pathlib import Path
+from queue import Queue
+from threading import Event, Lock, Thread
 
-from playwright.async_api import BrowserContext, Page, async_playwright
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from playwright.sync_api import sync_playwright
+from sqlalchemy.orm import Session
 
-from database.database import (
-    DATABASE_URL,
-    URL,
-    Base,
-    Comment,
-    MediumArticle,
-    setup_database,
-)
+from database.database import SessionLocal
+from scraper.medium_helpers import (extract_metadata_and_comments,
+                                    fetch_random_urls, persist_article_data,
+                                    update_url_status)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
+    handlers=[logging.FileHandler("article_scraper.log"), logging.StreamHandler()],
 )
 
-USER_AGENT = (
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 "
-    "(KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path(
+    "./screenshots"
 )
-VIEWPORT = {"width": 414, "height": 896}
-HEADERS = {"Accept-Language": "en-US,en;q=0.9", "Accept": "text/html,*/*;q=0.8"}
+MAX_CONCURRENT = 1
+shutdown_event = Event()
 
-async_engine = create_async_engine(DATABASE_URL, echo=False)
-AsyncSessionLocal = sessionmaker(
-    autocommit=False, autoflush=False, bind=async_engine, class_=AsyncSession
-)
-
-
-async def disable_bloating(page: Page) -> None:
-    """Disable loading of images and unnecessary resources."""
-    await page.route(
-        "**/*",
-        lambda route: (
-            route.abort()
-            if route.request.resource_type in ("image", "stylesheet", "font")
-            else route.continue_()
-        ),
-    )
+# Track performance metrics
+completed_tasks = 0
+start_time = 0
+metrics_lock = Lock()
 
 
-async def close_signup_popup(page: Page) -> None:
-    """Close the signup popup if it exists."""
-    for button in await page.locator('button[aria-label="close"]').all():
-        if await button.is_visible():
-            await button.click()
-            break
+def update_metrics():
+    """Update metrics counter without displaying intermediate results."""
+    global completed_tasks
+    with metrics_lock:
+        completed_tasks += 1
 
 
-async def extract_metadata(page: Page, article_data: dict) -> None:
-    """Extract article metadata from JSON-LD."""
-    if script := await page.query_selector('script[type="application/ld+json"]'):
-        try:
-            json_ld = json.loads(await script.inner_text())
-            article_data["title"] = json_ld.get("headline", "Unknown title")
-            article_data["author_name"] = json_ld.get("author", {}).get(
-                "name", "Unknown author"
-            )
-            article_data["date_published"] = json_ld.get(
-                "datePublished", "Unknown date"
-            )
-            article_data["date_modified"] = json_ld.get("dateModified", "Unknown date")
-            article_data["description"] = json_ld.get("description", "No description")
-            article_data["publisher"] = json_ld.get("publisher", {}).get(
-                "name", "Unknown publisher"
-            )
-            article_data["is_free"] = str(json_ld.get("isAccessibleForFree", "Unknown"))
-        except json.JSONDecodeError:
-            logging.error("Failed to parse JSON-LD data")
+def process_article(
+    url_data,
+    browser,
+    worker_idx: int,
+    session: Session,
+):
+    """
+    Process a Medium article: extract metadata, save to database, and take screenshot.
 
-    claps_element = await page.query_selector("div.pw-multi-vote-count p")
-    article_data["claps"] = await claps_element.inner_text() if claps_element else "0"
-
-
-async def extract_tags(page: Page, article_data: dict) -> None:
-    """Extract article tags."""
-    tags = await page.query_selector_all('a[href*="/tag/"]')
-    article_data["tags"] = (
-        ",".join([await tag.inner_text() for tag in tags]) if tags else ""
-    )
-
-
-async def extract_text(page: Page, article_data: dict) -> None:
-    """Extract full article text."""
-    paragraphs = await page.query_selector_all("article p[data-selectable-paragraph]")
-    if not paragraphs:
-        logging.debug("No paragraphs found for text extraction")
-        article_data["full_article_text"] = ""
+    Args:
+        url_data: Tuple of (url_id, url)
+        browser: Playwright browser instance
+        worker_idx: Worker index for filename
+        session: Database session
+    """
+    if shutdown_event.is_set():
         return
 
-    text_parts = []
-    for p in paragraphs:
-        try:
-            if text := await p.inner_text():
-                text_parts.append(text)
-        except Exception as e:
-            logging.warning(f"Failed to extract text from paragraph: {str(e)}")
-    article_data["full_article_text"] = "\n".join(text_parts)
+    url_id, url = url_data
+    success = False
 
-
-async def extract_comments(page: Page, article_data: dict) -> None:
-    """Extract comments."""
-    comments_data = []
-    for el in await page.locator("xpath=//pre/ancestor::div[5]").all():
-        parent_classes = await el.evaluate(
-            """(el) => el.parentElement.parentElement.classList.value"""
-        )
-        if "l" not in parent_classes:
-            continue
-
-        comment_data = {}
-
-        try:
-            comment_data["references_article"] = (
-                await el.locator("p[id^='embedded-quote']").count()
-            ) > 0
-        except Exception:
-            comment_data["references_article"] = False
-
-        authors = await el.locator("a[href^='/@']").all()
-        comment_data["username"] = (
-            await authors[0].get_attribute("href").split("?")[0].split("/")[1]
-            if authors
-            else "Unknown"
-        )
-
-        try:
-            comment_data["text"] = await el.evaluate(
-                """(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"""
-            )
-        except Exception:
-            comment_data["text"] = ""
-
-        try:
-            claps_element = await el.locator("div.pw-multi-vote-count").first
-            comment_data["claps"] = await claps_element.inner_text(timeout=100)
-        except Exception:
-            comment_data["claps"] = "0"
-
-        comment_data["full_html_text"] = await el.inner_text()
-        comments_data.append(comment_data)
-
-    article_data["comments"] = comments_data
-    article_data["comments_count"] = len(comments_data)
-
-
-async def _click_see_all_responses(page: Page) -> None:
-    """Click 'See all responses' button."""
-    if button := await page.query_selector('button:has-text("See all responses")'):
-        try:
-            await button.click(timeout=15000)
-            await page.wait_for_load_state("load", timeout=15000)
-        except Exception as e:
-            logging.warning(f"Failed to click 'See all responses': {e}")
-
-
-async def _scroll_to_load_comments(page: Page) -> None:
-    """Scroll to load all comments."""
-    html = await page.content()
-    for _ in range(100):
-        try:
-            await page.evaluate(
-                """document.querySelector('div[role="dialog"]')?.lastElementChild.firstElementChild.scrollBy(0, 200000)"""
-            )
-            await page.wait_for_timeout(500)
-            await page.wait_for_load_state("load", timeout=15000)
-            if html == (new_html := await page.content()):
-                break
-            html = new_html
-        except Exception as e:
-            logging.warning(f"Failed during scrolling: {e}")
-
-
-async def scrape_article(
-    url: str, context: BrowserContext, semaphore: asyncio.Semaphore
-) -> dict | None:
-    """Scrapes a single article and returns a dictionary with the data."""
-    page = None
     try:
-        async with semaphore:
-            page = await context.new_page()
-            await disable_bloating(page)
-            await page.goto(url, timeout=15000)
-            await page.wait_for_timeout(random.randint(500, 10000))
-            await page.wait_for_load_state("load", timeout=15000)
-            await close_signup_popup(page)
-
-            article_data = {}
-            await extract_metadata(page, article_data)
-            await extract_tags(page, article_data)
-            await extract_text(page, article_data)
-
-            if not article_data.get("title"):
-                logging.warning("No title found, skipping article")
-                return None
-
-            await _click_see_all_responses(page)
-            await _scroll_to_load_comments(page)
-            await extract_comments(page, article_data)
-
-            return article_data
-
-    except Exception as e:
-        logging.error(f"Error scraping {url}: {str(e)}")
-        return None
-
-    finally:
-        if page:
-            await page.close()
-
-
-async def insert_article_data(article_data: dict, db_lock: asyncio.Lock):
-    """Inserts the scraped article data into the database."""
-    async with AsyncSessionLocal() as session:
-        async with db_lock:
-            try:
-                url_obj = await session.get(URL, article_data["url"])
-                if not url_obj:
-                    logging.warning(f"URL {article_data['url']} not found.")
-                    return
-
-                article = MediumArticle(
-                    article_url=url_obj,
-                    title=article_data.get("title", "Unknown Title"),
-                    author_name=article_data.get("author_name", "Unknown Author"),
-                    date_published=article_data.get("date_published", "Unknown Date"),
-                    date_modified=article_data.get("date_modified", "Unknown Date"),
-                    description=article_data.get("description", ""),
-                    publisher=article_data.get("publisher", "Unknown Publisher"),
-                    is_free=article_data.get("is_free", "Unknown"),
-                    claps=article_data.get("claps", "0"),
-                    comments_count=article_data.get("comments_count", 0),
-                    tags=article_data.get("tags", ""),
-                    full_article_text=article_data.get("full_article_text", ""),
-                )
-                await session.add(article)
-                await session.flush()
-
-                for comment_data in article_data.get("comments", []):
-                    comment = Comment(
-                        article_id=article.id,
-                        username=comment_data.get("username", "Unknown User"),
-                        text=comment_data.get("text", ""),
-                        claps=comment_data.get("claps", "0"),
-                        full_html_text=comment_data.get("full_html_text", ""),
-                        references_article=comment_data.get(
-                            "references_article", False
-                        ),
-                    )
-                    await session.add(comment)
-
-                url_obj.crawl_status = "Success"
-                url_obj.last_crawled = datetime.now()
-
-                await session.commit()
-                logging.info(f"Successfully inserted data for: {url_obj.url}")
-
-            except Exception as e:
-                await session.rollback()
-                logging.exception(
-                    f"Error inserting data for {article_data.get('url')}: {e}"
-                )
-                if "url_obj" in locals():
-                    url_obj.crawl_status = f"Failed: {str(e)}"
-                    url_obj.last_crawled = datetime.now()
-                    await session.commit()
-
-
-async def main():
-    """Main function to scrape articles in parallel."""
-
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(
-            user_agent=USER_AGENT, viewport=VIEWPORT, extra_http_headers=HEADERS
+        # Use mobile viewport and user agent from the beginning
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},  # iPhone 12 dimensions
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
+            locale=random.choice(["en-US", "en-GB"]),
+            device_scale_factor=2.0,  # Retina display simulation
         )
-        _ = await context.new_page()
+        context.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
+        )
 
-        semaphore = asyncio.Semaphore(5)
-        db_lock = asyncio.Lock()
+        logging.info(f"Using mobile viewport for processing URL: {url}")
+
+        page = context.new_page()
+        try:
+            # Only log critical information to reduce output noise
+            logging.debug(f"Processing: {url}")
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            page.mouse.wheel(0, random.randint(100, 300))
+
+            # Extract and save article data, including comments
+            metadata = extract_metadata_and_comments(page)
+
+            # Additional logging for comments count
+            comment_count = metadata.get("comments_count", 0)
+            logging.info(
+                f"Article '{metadata.get('title', 'Unknown')[:50]}...' has {comment_count} comments"
+            )
+
+            persist_article_data(session, url_id, metadata)
+
+            filename = f"{worker_idx}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+            page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
+            success = True
+
+            # Update performance metrics silently
+            update_metrics()
+        finally:
+            page.close()
+            context.close()
+    except Exception as e:
+        logging.error(f"Error on {url}: {e}")
+
+    if not shutdown_event.is_set():
+        update_url_status(session, url_id, success)
+
+
+def get_random_urls(session, count=100):
+    """Get random unprocessed URLs synchronously"""
+    try:
+        # Using the renamed function
+        return fetch_random_urls(session, count)
+    except Exception as e:
+        logging.error(f"Failed to get URLs: {e}")
+        return []
+
+
+def worker_thread(task_queue, browser_factory, session):
+    """Worker thread function to process URLs"""
+    # Each thread creates its own browser instance
+    with sync_playwright() as p:
+        browser = browser_factory(p)
+        while not shutdown_event.is_set():
+            try:
+                task = task_queue.get(timeout=1)
+                if task is None:  # Sentinel value to stop thread
+                    break
+
+                url_data, index = task
+                process_article(url_data, browser, index, session)
+                task_queue.task_done()
+            except Exception as e:
+                if not shutdown_event.is_set():
+                    logging.error(f"Worker thread error: {e}")
 
         try:
-            async with AsyncSessionLocal() as session:
-                result = await session.execute(
-                    select(URL.url).where(URL.last_crawled == None).limit(100)
-                )
-                urls = [url[0] for url in result.all()]
-                logging.info(f"Found {len(urls)} URLs to scrape.")
-
-            scraping_tasks = []
-            for url in urls:
-                scraping_tasks.append(
-                    asyncio.create_task(scrape_article(url, context, semaphore))
-                )
-
-            scraped_articles = await asyncio.gather(*scraping_tasks)
-
-            insertion_tasks = []
-            for i, article_data in enumerate(scraped_articles):
-                if article_data:
-                    article_data["url"] = urls[i]
-                    insertion_tasks.append(insert_article_data(article_data, db_lock))
-
-            await asyncio.gather(*insertion_tasks)
-
+            browser.close()
         except Exception as e:
-            logging.exception(f"An error occurred in main: {e}")
+            pass
+
+
+def quiet_metrics_monitor(stop_event):
+    """Monitor metrics without intermediate output."""
+    while not stop_event.is_set():
+        time.sleep(60)  # Check every minute but don't produce output
+
+
+def display_final_metrics():
+    """Display final performance metrics."""
+    global completed_tasks, start_time
+
+    elapsed_time = time.time() - start_time
+    if completed_tasks > 0 and elapsed_time > 0:
+        speed = completed_tasks / (elapsed_time / 60)
+
+        logging.info(f"=== FINAL PERFORMANCE SUMMARY ===")
+        logging.info(f"Total processed: {completed_tasks} articles")
+        logging.info(f"Average speed: {speed:.2f} articles/minute")
+        logging.info(f"Total time: {elapsed_time/60:.1f} minutes")
+        if elapsed_time > 0 and speed > 0:
+            logging.info(f"Processing time per article: {60/speed:.2f} seconds")
+
+
+def handle_signal(signum, frame):
+    """Signal handler for graceful shutdown"""
+    logging.warning(f"Received signal {signum}, initiating shutdown...")
+    shutdown_event.set()
+
+
+def main():
+    """
+    Main execution function. Sets up browser, creates threads, and manages execution.
+    Handles graceful shutdown on interruption.
+    """
+    # Initialize performance tracking
+    global start_time, completed_tasks
+    start_time = time.time()
+    completed_tasks = 0
+
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    threads = []
+    metrics_thread = None
+
+    try:
+        # Create synchronous session
+        session = SessionLocal()
+        try:
+            # Use synchronous function to get URLsw
+            # url_data = get_random_urls(session, count=10)
+            url_data = [
+                (
+                    1,
+                    "https://medium.com/@harendra21/how-i-am-using-a-lifetime-100-free-server-bd241e3a347a",
+                )
+            ]
+            logging.info(
+                f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
+            )
+
+            # Create a task queue
+            task_queue = Queue()
+
+            # Browser factory function
+            def create_browser(playwright):
+                return playwright.chromium.launch(
+                    headless=False,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+
+            # Start worker threads
+            for i in range(MAX_CONCURRENT):
+                thread = Thread(
+                    target=worker_thread,
+                    args=(task_queue, create_browser, session),
+                    daemon=True,
+                )
+                thread.start()
+                threads.append(thread)
+
+            # Add metrics monitor thread
+            metrics_stop = Event()
+            metrics_thread = Thread(
+                target=quiet_metrics_monitor, args=(metrics_stop,), daemon=True
+            )
+            metrics_thread.start()
+
+            # Add tasks to the queue
+            for i, url in enumerate(url_data):
+                task_queue.put((url, i))
+
+            # Add sentinel values to stop workers
+            for _ in range(MAX_CONCURRENT):
+                task_queue.put(None)
+
+            # Wait for tasks to complete or shutdown
+            while not task_queue.empty() and not shutdown_event.is_set():
+                time.sleep(1)
+
+            # Wait for completion or shutdown
+            if shutdown_event.is_set():
+                logging.warning("Shutting down gracefully...")
+                # Don't need to cancel threads as they check shutdown_event
+
+            # Wait for threads to finish (with timeout)
+            for thread in threads:
+                thread.join(timeout=5)
+
+            # Stop metrics thread
+            metrics_stop.set()
+            if metrics_thread:
+                metrics_thread.join(timeout=2)
 
         finally:
-            await context.close()
-            await browser.close()
+            # Display final metrics
+            display_final_metrics()
+            # Ensure session is closed
+            session.close()
+
+    except Exception as e:
+        logging.error(f"Unhandled error: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
