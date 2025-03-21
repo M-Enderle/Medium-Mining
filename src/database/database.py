@@ -1,5 +1,5 @@
-from sqlalchemy import (Column, Float, ForeignKey, Integer, String, Text,
-                        create_engine, Sequence)
+from sqlalchemy import (Column, Float, ForeignKey, Integer, Sequence, String,
+                        Text, create_engine)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 DATABASE_URL = "duckdb:///medium_articles.duckdb"  # Persistent storage
@@ -11,27 +11,45 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Define ORM models
 class Author(Base):
     __tablename__ = "authors"
-    author_id_seq = Sequence('author_id_seq')
+    author_id_seq = Sequence("author_id_seq")
 
-    id = Column('id', Integer, author_id_seq, server_default=author_id_seq.next_value(), primary_key=True)
+    id = Column(
+        "id",
+        Integer,
+        author_id_seq,
+        server_default=author_id_seq.next_value(),
+        primary_key=True,
+    )
     name = Column(String(100), unique=True, nullable=False)
     articles_count = Column(Integer)
 
 
 class Sitemap(Base):
     __tablename__ = "sitemaps"
-    sitemap_id_seq = Sequence('sitemap_id_seq')
-    
-    id = Column('id', Integer, sitemap_id_seq, server_default=sitemap_id_seq.next_value(), primary_key=True)
+    sitemap_id_seq = Sequence("sitemap_id_seq")
+
+    id = Column(
+        "id",
+        Integer,
+        sitemap_id_seq,
+        server_default=sitemap_id_seq.next_value(),
+        primary_key=True,
+    )
     sitemap_url = Column(String(255), unique=True, nullable=False)
     articles_count = Column(Integer)
 
 
 class URL(Base):
     __tablename__ = "urls"
-    url_id_seq = Sequence('url_id_seq')
-    
-    id = Column('id', Integer, url_id_seq, server_default=url_id_seq.next_value(), primary_key=True)
+    url_id_seq = Sequence("url_id_seq")
+
+    id = Column(
+        "id",
+        Integer,
+        url_id_seq,
+        server_default=url_id_seq.next_value(),
+        primary_key=True,
+    )
     url = Column(String(255), unique=True, nullable=False)
     last_modified = Column(String(50))
     change_freq = Column(String(50))
@@ -41,9 +59,15 @@ class URL(Base):
 
 class MediumArticle(Base):
     __tablename__ = "medium_articles"
-    article_id_seq = Sequence('article_id_seq')
-    
-    id = Column('id', Integer, article_id_seq, server_default=article_id_seq.next_value(), primary_key=True)
+    article_id_seq = Sequence("article_id_seq")
+
+    id = Column(
+        "id",
+        Integer,
+        article_id_seq,
+        server_default=article_id_seq.next_value(),
+        primary_key=True,
+    )
     url_id = Column(Integer, ForeignKey("urls.id"))
     title = Column(String(255), nullable=False)
     author_id = Column(Integer, ForeignKey("authors.id"))
@@ -60,9 +84,15 @@ class MediumArticle(Base):
 
 class Comment(Base):
     __tablename__ = "comments"
-    comment_id_seq = Sequence('comment_id_seq')
-    
-    id = Column('id', Integer, comment_id_seq, server_default=comment_id_seq.next_value(), primary_key=True)
+    comment_id_seq = Sequence("comment_id_seq")
+
+    id = Column(
+        "id",
+        Integer,
+        comment_id_seq,
+        server_default=comment_id_seq.next_value(),
+        primary_key=True,
+    )
     article_id = Column(Integer, ForeignKey("medium_articles.id"))
     username = Column(String(100))
     text = Column(Text)
