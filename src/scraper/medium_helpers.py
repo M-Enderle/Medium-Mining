@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Tuple
 from playwright.sync_api import Page
 from sqlalchemy import func
 
-from database.database import URL, Author, MediumArticle
+from database.database import URL, MediumArticle
 
 # Configure logging
 logging.basicConfig(
@@ -19,9 +19,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def fetch_random_urls(session, count: int = 10) -> List[Tuple[int, str]]:
+def fetch_random_urls(session, count = None) -> List[Tuple[int, str]]:
     """Fetch random URLs from the database."""
-    return session.query(URL.id, URL.url).order_by(func.random()).limit(count).all()
+    try:
+        if not count:
+            # Get all unprocessed URLs
+            return session.query(URL.id, URL.url).filter(URL.last_scraped == None).all()
+        else:
+            # Get limited number of unprocessed URLs
+            return (
+                session.query(URL.id, URL.url)
+                .order_by(func.random())
+                .filter(URL.last_scraped == None)
+                .limit(count)
+                .all()
+            )
+    except Exception as e:
+        logger.error(f"Error fetching random URLs: {e}")
+        return []
 
 
 def update_url_status(session, url_id: int, success: bool):
@@ -29,7 +44,9 @@ def update_url_status(session, url_id: int, success: bool):
     try:
         url = session.query(URL).filter(URL.id == url_id).first()
         if url:
-            url.last_crawled = datetime.now()
+            current_time = datetime.now()
+            url.last_crawled = current_time
+            url.last_scraped = current_time  # Update the new last_scraped field
             url.crawl_status = "Successful" if success else "Failed"
             session.commit()
             logger.info(
@@ -249,22 +266,13 @@ def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
 def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool:
     """Save article metadata to database."""
     try:
-        # Handle author
-        author = None
-        if metadata.get("author"):
-            author = session.query(Author).filter_by(name=metadata["author"]).first()
-            if not author:
-                author = Author(name=metadata["author"])
-                session.add(author)
-                session.flush()
-
         # Check if article exists
-        existing = (
-            session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
-        )
+        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        
+        # Prepare article data with author name directly included
         article_data = {
             "title": metadata.get("title", ""),
-            "author_id": author.id if author else None,
+            "author_name": metadata.get("author", "Unknown"),  # Store author name directly
             "date_published": metadata.get("date_published", ""),
             "date_modified": metadata.get("date_modified", ""),
             "description": metadata.get("description", ""),

@@ -1,5 +1,5 @@
 from sqlalchemy import (Column, Float, ForeignKey, Integer, Sequence, String,
-                        Text, create_engine)
+                        Text, create_engine, DateTime)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 DATABASE_URL = "duckdb:///medium_articles.duckdb"  # Persistent storage
@@ -9,20 +9,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 # Define ORM models
-class Author(Base):
-    __tablename__ = "authors"
-    author_id_seq = Sequence("author_id_seq")
-
-    id = Column(
-        "id",
-        Integer,
-        author_id_seq,
-        server_default=author_id_seq.next_value(),
-        primary_key=True,
-    )
-    name = Column(String(100), unique=True, nullable=False)
-    articles_count = Column(Integer)
-
+# Author model removed
 
 class Sitemap(Base):
     __tablename__ = "sitemaps"
@@ -55,6 +42,9 @@ class URL(Base):
     change_freq = Column(String(50))
     priority = Column(Float)
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"))
+    last_crawled = Column(DateTime, nullable=True)  # Already used in code
+    crawl_status = Column(String(50), nullable=True)  # Already used in code
+    last_scraped = Column(DateTime, nullable=True)  # New column to track scraping
 
 
 class MediumArticle(Base):
@@ -70,7 +60,7 @@ class MediumArticle(Base):
     )
     url_id = Column(Integer, ForeignKey("urls.id"))
     title = Column(String(255), nullable=False)
-    author_id = Column(Integer, ForeignKey("authors.id"))
+    author_name = Column(String(100))  # Changed from author_id to author_name
     date_published = Column(String(50))
     date_modified = Column(String(50))
     description = Column(Text)

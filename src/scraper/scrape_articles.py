@@ -29,7 +29,8 @@ logging.basicConfig(
 SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path(
     "./screenshots"
 )
-MAX_CONCURRENT = 1
+MAX_CONCURRENT = 5
+HEADLESS = True  # Set to True for headless mode
 shutdown_event = Event()
 
 # Track performance metrics
@@ -78,8 +79,6 @@ def process_article(
             "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
         )
 
-        logging.info(f"Using mobile viewport for processing URL: {url}")
-
         page = context.new_page()
         try:
             # Only log critical information to reduce output noise
@@ -111,17 +110,8 @@ def process_article(
         logging.error(f"Error on {url}: {e}")
 
     if not shutdown_event.is_set():
+        # This call will update both last_crawled and last_scraped timestamps
         update_url_status(session, url_id, success)
-
-
-def get_random_urls(session, count=100):
-    """Get random unprocessed URLs synchronously"""
-    try:
-        # Using the renamed function
-        return fetch_random_urls(session, count)
-    except Exception as e:
-        logging.error(f"Failed to get URLs: {e}")
-        return []
 
 
 def worker_thread(task_queue, browser_factory, session):
@@ -152,6 +142,8 @@ def quiet_metrics_monitor(stop_event):
     """Monitor metrics without intermediate output."""
     while not stop_event.is_set():
         time.sleep(60)  # Check every minute but don't produce output
+        # The function intentionally does nothing but wait
+        # It exists to be consistent with the metrics monitoring thread creation in main()
 
 
 def display_final_metrics():
@@ -198,7 +190,7 @@ def main():
         session = SessionLocal()
         try:
             # Use synchronous function to get URLsw
-            url_data = get_random_urls(session, count=10)
+            url_data = fetch_random_urls(session)
             logging.info(
                 f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
             )
@@ -209,7 +201,7 @@ def main():
             # Browser factory function
             def create_browser(playwright):
                 return playwright.chromium.launch(
-                    headless=False,
+                    headless=HEADLESS,
                     args=["--disable-blink-features=AutomationControlled"],
                 )
 
