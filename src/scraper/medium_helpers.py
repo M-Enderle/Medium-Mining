@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 from playwright.sync_api import Page
 from sqlalchemy import func, select, update
 
-from database.database import URL, MediumArticle, Author
+from database.database import URL, Author, MediumArticle
 
 # Configure logging
 logging.basicConfig(
@@ -22,9 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def get_random_urls(
-    session, count: int = 10
-) -> List[Tuple[int, str]]:
+def get_random_urls(session, count: int = 10) -> List[Tuple[int, str]]:
     """
     Fetch random URLs from the database.
 
@@ -167,9 +165,7 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
 
     # Extract tags
     tags = page.query_selector_all('a[href*="/tag/"]')
-    article_data["tags"] = (
-        ",".join([tag.inner_text() for tag in tags]) if tags else ""
-    )
+    article_data["tags"] = ",".join([tag.inner_text() for tag in tags]) if tags else ""
 
     return article_data
 
@@ -177,66 +173,68 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
 def save_article(session, url_id: int, metadata: Dict[str, Any]) -> bool:
     """
     Save article metadata to database (synchronous version)
-    
+
     Args:
         session: SQLAlchemy session
         url_id: URL ID in database
         metadata: Dictionary with article metadata
-        
+
     Returns:
         True if successful, False otherwise
     """
     try:
         # Handle author (create if not exists)
         author = None
-        if metadata.get('author'):
-            author = session.query(Author).filter_by(name=metadata['author']).first()
+        if metadata.get("author"):
+            author = session.query(Author).filter_by(name=metadata["author"]).first()
             if not author:
-                author = Author(name=metadata['author'])
+                author = Author(name=metadata["author"])
                 session.add(author)
                 session.flush()  # Get ID without committing
-        
+
         # Check if article already exists
-        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
-        
+        existing = (
+            session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        )
+
         if existing:
             # Update existing record
-            existing.title = metadata.get('title', '')
+            existing.title = metadata.get("title", "")
             existing.author_id = author.id if author else None
-            existing.date_published = metadata.get('date_published', '')
-            existing.date_modified = metadata.get('date_modified', '')
-            existing.description = metadata.get('description', '')
-            existing.publisher = metadata.get('publisher', '')
-            existing.is_free = metadata.get('is_free', '')
-            existing.claps = metadata.get('claps', '')
-            existing.comments_count = metadata.get('comments_count', 0)
-            existing.tags = metadata.get('tags', '')
-            existing.full_article_text = metadata.get('full_text', '')
+            existing.date_published = metadata.get("date_published", "")
+            existing.date_modified = metadata.get("date_modified", "")
+            existing.description = metadata.get("description", "")
+            existing.publisher = metadata.get("publisher", "")
+            existing.is_free = metadata.get("is_free", "")
+            existing.claps = metadata.get("claps", "")
+            existing.comments_count = metadata.get("comments_count", 0)
+            existing.tags = metadata.get("tags", "")
+            existing.full_article_text = metadata.get("full_text", "")
             logger.debug(f"Updated existing article for URL ID {url_id}")
         else:
             # Create article
             article = MediumArticle(
                 url_id=url_id,
-                title=metadata.get('title', ''),
+                title=metadata.get("title", ""),
                 author_id=author.id if author else None,
-                date_published=metadata.get('date_published', ''),
-                date_modified=metadata.get('date_modified', ''),
-                description=metadata.get('description', ''),
-                publisher=metadata.get('publisher', ''),
-                is_free=metadata.get('is_free', ''),
-                claps=metadata.get('claps', ''),
-                comments_count=metadata.get('comments_count', 0),
-                tags=metadata.get('tags', ''),
-                full_article_text=metadata.get('full_text', '')
+                date_published=metadata.get("date_published", ""),
+                date_modified=metadata.get("date_modified", ""),
+                description=metadata.get("description", ""),
+                publisher=metadata.get("publisher", ""),
+                is_free=metadata.get("is_free", ""),
+                claps=metadata.get("claps", ""),
+                comments_count=metadata.get("comments_count", 0),
+                tags=metadata.get("tags", ""),
+                full_article_text=metadata.get("full_text", ""),
             )
-            
+
             session.add(article)
             logger.debug(f"Created new article for URL ID {url_id}")
-        
+
         session.commit()
         logger.info(f"Saved article data for URL ID {url_id}")
         return True
-        
+
     except Exception as e:
         session.rollback()
         logger.error(f"Failed to save article: {e}")

@@ -17,7 +17,8 @@ from playwright.sync_api import sync_playwright
 from sqlalchemy.orm import Session
 
 from database.database import SessionLocal
-from scraper.medium_helpers import extract_metadata, save_article, setup_signal_handlers
+from scraper.medium_helpers import (extract_metadata, save_article,
+                                    setup_signal_handlers)
 
 logger = logging.getLogger(__name__)
 SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Path(
@@ -30,6 +31,7 @@ shutdown_event = Event()
 completed_tasks = 0
 start_time = 0
 metrics_lock = Lock()
+
 
 def update_metrics():
     """Update metrics counter without displaying intermediate results."""
@@ -55,7 +57,7 @@ def take_screenshot(
     """
     if shutdown_event.is_set():
         return
-    
+
     url_id, url = url_data
     success = False
 
@@ -82,13 +84,11 @@ def take_screenshot(
             # Extract and save article data, take screenshot
             metadata = extract_metadata(page)
             save_article(session, url_id, metadata)
-            
+
             filename = f"{worker_idx}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-            page.screenshot(
-                path=str(SCREENSHOT_DIR / filename), full_page=True
-            )
+            page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
             success = True
-            
+
             # Update performance metrics silently
             update_metrics()
         finally:
@@ -104,6 +104,7 @@ def take_screenshot(
 def update_url_status(session, url_id, success):
     """Update URL processing status synchronously"""
     from database.database import URL
+
     try:
         url = session.query(URL).filter(URL.id == url_id).first()
         if url:
@@ -117,6 +118,7 @@ def update_url_status(session, url_id, success):
 def get_random_urls(session, count=100):
     """Get random unprocessed URLs synchronously"""
     from database.database import URL
+
     try:
         # Synchronous query to get URLs
         urls = session.query(URL.id, URL.url).limit(count).all()
@@ -136,14 +138,14 @@ def worker_thread(task_queue, browser_factory, session):
                 task = task_queue.get(timeout=1)
                 if task is None:  # Sentinel value to stop thread
                     break
-                
+
                 url_data, index = task
                 take_screenshot(url_data, browser, index, session)
                 task_queue.task_done()
             except Exception as e:
                 if not shutdown_event.is_set():
                     logger.error(f"Worker thread error: {e}")
-        
+
         browser.close()
 
 
@@ -156,11 +158,11 @@ def quiet_metrics_monitor(stop_event):
 def display_final_metrics():
     """Display final performance metrics."""
     global completed_tasks, start_time
-    
+
     elapsed_time = time.time() - start_time
     if completed_tasks > 0 and elapsed_time > 0:
         speed = completed_tasks / (elapsed_time / 60)
-        
+
         logger.info(f"=== FINAL PERFORMANCE SUMMARY ===")
         logger.info(f"Total processed: {completed_tasks} articles")
         logger.info(f"Average speed: {speed:.2f} articles/minute")
@@ -184,14 +186,14 @@ def main():
     global start_time, completed_tasks
     start_time = time.time()
     completed_tasks = 0
-    
+
     # Set up signal handlers
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
     threads = []
     metrics_thread = None
-    
+
     try:
         # Create synchronous session
         session = SessionLocal()
@@ -204,54 +206,52 @@ def main():
 
             # Create a task queue
             task_queue = Queue()
-            
+
             # Browser factory function
             def create_browser(playwright):
                 return playwright.chromium.launch(
                     headless=True,
                     args=["--disable-blink-features=AutomationControlled"],
                 )
-            
+
             # Start worker threads
             for i in range(MAX_CONCURRENT):
                 thread = Thread(
-                    target=worker_thread, 
+                    target=worker_thread,
                     args=(task_queue, create_browser, session),
-                    daemon=True
+                    daemon=True,
                 )
                 thread.start()
                 threads.append(thread)
-            
+
             # Add metrics monitor thread
             metrics_stop = Event()
             metrics_thread = Thread(
-                target=quiet_metrics_monitor, 
-                args=(metrics_stop,),
-                daemon=True
+                target=quiet_metrics_monitor, args=(metrics_stop,), daemon=True
             )
             metrics_thread.start()
-            
+
             # Add tasks to the queue
             for i, url in enumerate(url_data):
                 task_queue.put((url, i))
-            
+
             # Add sentinel values to stop workers
             for _ in range(MAX_CONCURRENT):
                 task_queue.put(None)
-                
+
             # Wait for tasks to complete or shutdown
             while not task_queue.empty() and not shutdown_event.is_set():
                 time.sleep(1)
-            
+
             # Wait for completion or shutdown
             if shutdown_event.is_set():
                 logger.warning("Shutting down gracefully...")
                 # Don't need to cancel threads as they check shutdown_event
-            
+
             # Wait for threads to finish (with timeout)
             for thread in threads:
                 thread.join(timeout=5)
-                
+
             # Stop metrics thread
             metrics_stop.set()
             if metrics_thread:
@@ -275,5 +275,5 @@ if __name__ == "__main__":
     # Set other loggers to WARNING level to reduce noise
     logging.getLogger("playwright").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
-    
+
     main()
