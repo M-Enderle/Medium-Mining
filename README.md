@@ -34,6 +34,9 @@ poetry install
 
 # Initialize the database
 poetry run python -m database.database
+
+# initialize playwright
+poetry run playwright install
 ```
 
 ## Usage
