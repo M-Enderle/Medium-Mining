@@ -17,7 +17,17 @@ requests = "^2.32.3"
 seaborn = "^0.13.2"
 pandas = "^2.2.3"
 scipy = "^1.15.2"
+duckdb = "^1.2.1"
+duckdb-engine = "^0.15.0"
+black = "^25.1.0"
+isort = "^6.0.1"
+aiosqlite = "^0.21.0"
+aiohttp = "^3.11.14"
+playwright = "^1.51.0"
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
 
 [build-system]
 requires = ["poetry-core"]
