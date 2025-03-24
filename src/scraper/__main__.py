@@ -3,8 +3,8 @@ import asyncio
 import logging
 import sys
 
-from scraper.scrape_sitemaps import retrieve_sitemaps
 from scraper.scrape_articles import main as scrape_articles_main
+from scraper.scrape_sitemaps import retrieve_sitemaps
 
 
 async def run_sitemap_scraper(args):
@@ -44,18 +44,21 @@ def run_article_scraper(args):
     if args.url_count:
         # Modify the fetch_random_urls function's behavior
         import scraper.medium_helpers
+
         scraper.medium_helpers.URLS_TO_FETCH = args.url_count
-    
+
     # Handle headless mode
     if args.headless is not None:
         import scraper.scrape_articles
+
         scraper.scrape_articles.HEADLESS = args.headless
-    
+
     # Handle worker count
     if args.workers:
         import scraper.scrape_articles
+
         scraper.scrape_articles.MAX_CONCURRENT = args.workers
-    
+
     try:
         scrape_articles_main()
         return 0
@@ -69,7 +72,7 @@ async def async_main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Medium Scraper Tool")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
-    
+
     # Sitemap scraper subparser
     sitemap_parser = subparsers.add_parser("sitemap", help="Scrape Medium sitemaps")
     sitemap_parser.add_argument(
@@ -81,13 +84,11 @@ async def async_main():
     sitemap_parser.add_argument(
         "--verbose", action="store_true", help="Enable verbose output to console"
     )
-    
+
     # Article scraper subparser
     article_parser = subparsers.add_parser("article", help="Scrape Medium articles")
     article_parser.add_argument(
-        "--url-count", 
-        type=int, 
-        help="Number of URLs to process"
+        "--url-count", type=int, help="Number of URLs to process"
     )
     article_parser.add_argument(
         "--headless",

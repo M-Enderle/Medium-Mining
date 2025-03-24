@@ -60,14 +60,11 @@ def process_article(url_data, browser, worker_idx: int, session: Session):
         )
 
         with context.new_page() as page:
-            logging.debug(f"Processing: {url}")
+            logging.debug(f"Processing URL: {url}")
             page.goto(url, wait_until="networkidle", timeout=30000)
             page.mouse.wheel(0, random.randint(100, 300))
 
             metadata = extract_metadata_and_comments(page)
-            logging.info(
-                f"Article '{metadata.get('title', 'Unknown')[:50]}...' has {metadata.get('comments_count', 0)} comments"
-            )
 
             # Move persist_article_data inside the try block
             if persist_article_data(
@@ -77,16 +74,14 @@ def process_article(url_data, browser, worker_idx: int, session: Session):
 
             filename = f"{worker_idx}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
             page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=True)
+            logging.debug(f"Saved screenshot to {filename}")
 
             update_metrics()  # Update metrics only on success
 
     except Exception as e:
         logging.error(f"Error on {url}: {e}")
-        # No rollback here; let the outer context manager handle it
     finally:
-        # Update status *after* potential database operations
         update_url_status(session, url_id, success)
-        # No session operations (commit/rollback) here; managed by the caller
 
 
 def worker_thread(task_queue, browser_factory, session_factory):
@@ -162,7 +157,7 @@ def main():
         with session_factory() as session:  # Get URLs in a separate session
             url_data = fetch_random_urls(session)
 
-        logging.info(
+        logging.debug(
             f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
         )
         task_queue = Queue()

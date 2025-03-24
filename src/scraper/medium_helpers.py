@@ -22,11 +22,12 @@ def fetch_random_urls(session, count=None) -> List[Tuple[int, str]]:
     """Fetch random URLs from the database."""
     # query = session.query(URL.id, URL.url).filter(URL.last_crawled == None)
     query = session.query(URL.id, URL.url)
-    
+
     # Use the provided count, or fall back to the global URLS_TO_FETCH
     limit = count if count is not None else URLS_TO_FETCH
     query = query.order_by(func.random()).limit(limit)
-    
+
+    logger.debug(f"Fetching {limit} random URLs from database")
     return query.all()
 
 
@@ -38,7 +39,7 @@ def update_url_status(session, url_id: int, success: bool):
             url.last_crawled = datetime.now()
             url.crawl_status = "Successful" if success else "Failed"
             session.commit()
-            logger.info(f"Updated URL {url_id} status: {success}")
+            logger.debug(f"Updated URL {url_id} status: {success}")
     except Exception as e:
         session.rollback()
         logger.error(f"DB error for URL {url_id}: {e}")
@@ -201,7 +202,7 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
     try:
         title = metadata.get("title", "").strip()
         if not title or title == "Unknown title":
-            logger.warning(f"Skipping article with URL ID {url_id} - No title")
+            logger.info(f"URL ID {url_id} is not a valid article - No title")
             return False
 
         article_data = {
@@ -253,7 +254,11 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
 
         else:
             session.commit()
-        logger.info(f"Saved article data for URL ID {url_id}")
+
+        logger.info(
+            f"Article '{title[:50]}...' has {metadata.get('comments_count', 0)} comments"
+        )
+        logger.debug(f"Saved article data for URL ID {url_id}")
         return True
 
     except Exception as e:
