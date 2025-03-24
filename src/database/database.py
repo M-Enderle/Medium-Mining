@@ -1,5 +1,5 @@
-from sqlalchemy import (Column, Float, ForeignKey, Integer, Sequence, String,
-                        Text, create_engine, DateTime)
+from sqlalchemy import (Column, DateTime, Float, ForeignKey, Integer, Sequence,
+                        String, Text, create_engine, Boolean)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 DATABASE_URL = "duckdb:///medium_articles.duckdb"  # Persistent storage
@@ -7,9 +7,6 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-
-# Define ORM models
-# Author model removed
 
 class Sitemap(Base):
     __tablename__ = "sitemaps"
@@ -37,6 +34,7 @@ class URL(Base):
         server_default=url_id_seq.next_value(),
         primary_key=True,
     )
+
     url = Column(String(255), unique=True, nullable=False)
     last_modified = Column(String(50))
     change_freq = Column(String(50))
@@ -44,7 +42,6 @@ class URL(Base):
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"))
     last_crawled = Column(DateTime, nullable=True)  # Already used in code
     crawl_status = Column(String(50), nullable=True)  # Already used in code
-    last_scraped = Column(DateTime, nullable=True)  # New column to track scraping
 
 
 class MediumArticle(Base):
@@ -86,10 +83,12 @@ class Comment(Base):
     article_id = Column(Integer, ForeignKey("medium_articles.id"))
     username = Column(String(100))
     text = Column(Text)
-    date_posted = Column(String(50))
+    full_text = Column(Text)
+    claps = Column(String(20))
+    references_article = Column(Boolean)
 
 
-def get_session(db_path=DATABASE_URL):
+def get_session():
     """Get a SQLAlchemy session for database operations."""
     return SessionLocal()
 
