@@ -1,5 +1,3 @@
-"""Helper functions for Medium article scraping."""
-
 import json
 import logging
 import signal
@@ -10,33 +8,26 @@ from typing import Any, Dict, List, Tuple
 from playwright.sync_api import Page
 from sqlalchemy import func
 
-from database.database import URL, MediumArticle
+from database.database import URL, Comment, MediumArticle
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Configure logging (Keep it simple)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Default number of URLs to fetch
+URLS_TO_FETCH = 50
 
-def fetch_random_urls(session, count = None) -> List[Tuple[int, str]]:
+
+def fetch_random_urls(session, count=None) -> List[Tuple[int, str]]:
     """Fetch random URLs from the database."""
-    try:
-        if not count:
-            # Get all unprocessed URLs
-            return session.query(URL.id, URL.url).filter(URL.last_scraped == None).all()
-        else:
-            # Get limited number of unprocessed URLs
-            return (
-                session.query(URL.id, URL.url)
-                .order_by(func.random())
-                .filter(URL.last_scraped == None)
-                .limit(count)
-                .all()
-            )
-    except Exception as e:
-        logger.error(f"Error fetching random URLs: {e}")
-        return []
+    # query = session.query(URL.id, URL.url).filter(URL.last_crawled == None)
+    query = session.query(URL.id, URL.url)
+    
+    # Use the provided count, or fall back to the global URLS_TO_FETCH
+    limit = count if count is not None else URLS_TO_FETCH
+    query = query.order_by(func.random()).limit(limit)
+    
+    return query.all()
 
 
 def update_url_status(session, url_id: int, success: bool):
@@ -44,40 +35,25 @@ def update_url_status(session, url_id: int, success: bool):
     try:
         url = session.query(URL).filter(URL.id == url_id).first()
         if url:
-            current_time = datetime.now()
-            url.last_crawled = current_time
-            url.last_scraped = current_time  # Update the new last_scraped field
+            url.last_crawled = datetime.now()
             url.crawl_status = "Successful" if success else "Failed"
             session.commit()
-            logger.info(
-                f"Updated URL {url_id} status: {'Successful' if success else 'Failed'}"
-            )
+            logger.info(f"Updated URL {url_id} status: {success}")
     except Exception as e:
         session.rollback()
         logger.error(f"DB error for URL {url_id}: {e}")
 
 
 def extract_text(page: Page) -> str:
-    """Extract full article text with better paragraph selection."""
+    """Extract full article text."""
     paragraphs = page.query_selector_all(
         "article p[data-selectable-paragraph]"
     ) or page.query_selector_all("article p")
-    if not paragraphs:
-        return ""
-
-    text_parts = []
-    for p in paragraphs:
-        try:
-            if text := p.inner_text():
-                text_parts.append(text)
-        except Exception as e:
-            logger.warning(f"Text extraction error: {e}")
-
-    return "\n".join(text_parts)
+    return "\n".join(p.inner_text() for p in paragraphs if p.inner_text())
 
 
 def click_see_all_responses(page: Page) -> bool:
-    """Click 'See all responses' button to load comments section."""
+    """Click 'See all responses' button."""
     try:
         button = page.query_selector('button:has-text("See all responses")')
         if button:
@@ -94,7 +70,6 @@ def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
     html = page.content()
     for _ in range(max_scrolls):
         try:
-            # Scroll the comments dialog
             page.evaluate(
                 """() => {
                 const dialog = document.querySelector('div[role="dialog"]');
@@ -103,11 +78,9 @@ def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
             )
             page.wait_for_timeout(500)
             page.wait_for_load_state("load", timeout=5000)
-
-            new_html = page.content()
-            if html == new_html:  # No new content loaded
+            if page.content() == html:
                 break
-            html = new_html
+            html = page.content()
         except Exception as e:
             logger.warning(f"Scroll error: {e}")
             break
@@ -116,62 +89,42 @@ def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
 def extract_comments(page: Page) -> List[Dict[str, Any]]:
     """Extract comments from a Medium article."""
     comments = []
+    for el in page.locator("xpath=//pre/ancestor::div[5]").all():
+        parent_classes = el.evaluate(
+            """(el) => el.parentElement.parentElement.classList.value"""
+        )
+        if "l" not in parent_classes:
+            continue
 
-    try:
-        comment_elements = page.locator("xpath=//pre/ancestor::div[5]").all()
+        comment_data = {
+            "references_article": el.locator("p[id^='embedded-quote']").count() > 0,
+            "username": "Unknown",
+            "text": "",
+            "claps": "0",
+            "full_html_text": el.inner_text(),
+        }
 
-        for el in comment_elements:
-            # Skip non-comments
-            parent_classes = el.evaluate(
-                """(el) => el.parentElement.parentElement.classList.value"""
+        authors = el.locator("a[href^='/@']").all()
+        if authors:
+            href = authors[0].get_attribute("href")
+            comment_data["username"] = (
+                href.split("?")[0].split("/")[1] if href else "Unknown"
             )
-            if "l" not in parent_classes:
-                continue
 
-            comment_data = {
-                "references_article": False,
-                "username": "Unknown",
-                "text": "",
-                "claps": "0",
-                "full_html_text": el.inner_text(),
-            }
-
-            # Check if comment references article
-            try:
-                comment_data["references_article"] = (
-                    el.locator("p[id^='embedded-quote']").count() > 0
-                )
-            except:
-                pass
-
-            # Get author username
-            try:
-                authors = el.locator("a[href^='/@']").all()
-                if authors:
-                    href = authors[0].get_attribute("href")
-                    comment_data["username"] = (
-                        href.split("?")[0].split("/")[1] if href else "Unknown"
-                    )
-            except:
-                pass
-
-            # Get comment text and claps
-            try:
-                comment_data["text"] = el.evaluate(
-                    """(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"""
-                )
-
-                claps_element = el.locator("div.pw-multi-vote-count").first
-                if claps_element:
-                    comment_data["claps"] = claps_element.inner_text(timeout=500) or "0"
-            except:
-                pass
-
-            comments.append(comment_data)
-
-    except Exception as e:
-        logger.error(f"Error extracting comments: {e}")
-
+        try:
+            comment_data["text"] = el.evaluate(
+                """(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"""
+            )
+            if claps_element := el.locator("div.pw-multi-vote-count").first:
+                comment_data["claps"] = claps_element.inner_text(timeout=500) or "0"
+        except:
+            pass
+        try:
+            comment_data["full_text"] = el.inner_text()
+        except Exception as e:
+            logger.warning(f"Failed to extract full text: {e}")
+            comment_data["full_text"] = ""
+        comments.append(comment_data)
     return comments
 
 
@@ -191,10 +144,10 @@ def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
         "full_text": "",
     }
 
-    # Extract JSON-LD data
-    try:
-        script = page.query_selector('script[type="application/ld+json"]')
-        if script and (json_ld := json.loads(script.inner_text())):
+    # Try to extract from JSON-LD
+    if script := page.query_selector('script[type="application/ld+json"]'):
+        try:
+            json_ld = json.loads(script.inner_text())
             article_data.update(
                 {
                     "title": json_ld.get("headline", "Unknown title"),
@@ -205,77 +158,55 @@ def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
                     "publisher": json_ld.get("publisher", {}).get(
                         "name", "Unknown publisher"
                     ),
+                    "is_free": (
+                        "Paid"
+                        if json_ld.get("isAccessibleForFree") is True
+                        else (
+                            "Member-Only"
+                            if json_ld.get("isAccessibleForFree") is False
+                            else "Public"
+                        )
+                    ),
                 }
             )
+        except (json.JSONDecodeError, TypeError):
+            pass
 
-            # Handle accessibility/paywall
-            is_accessible = json_ld.get("isAccessibleForFree")
-            if is_accessible is True:
-                article_data["is_free"] = "Paid"
-            elif is_accessible is False:
-                article_data["is_free"] = "Member-Only"
-    except:
-        pass
+    # Check for paywall indicators
+    if page.query_selector('div[aria-label="Post Preview"]') or page.query_selector(
+        "div.paywall-upsell-container"
+    ):
+        article_data["is_free"] = "Member-Only"
 
-    # Check for member/paywall indicators
-    try:
-        if page.query_selector('div[aria-label="Post Preview"]'):
-            article_data["is_free"] = "Member-Only"
-        if page.query_selector("div.paywall-upsell-container"):
-            article_data["is_free"] = "Paid"
-    except:
-        pass
-
-    # Get claps
     if claps_element := page.query_selector("div.pw-multi-vote-count p"):
         article_data["claps"] = claps_element.inner_text()
 
-    # Get article text
     article_data["full_text"] = extract_text(page)
+    article_data["tags"] = ",".join(
+        tag.inner_text() for tag in page.query_selector_all('a[href*="/tag/"]')
+    )
 
-    # Get tags
-    if tags := page.query_selector_all('a[href*="/tag/"]'):
-        article_data["tags"] = ",".join(tag.inner_text() for tag in tags)
-
-    # Extract comments
     comments_data = []
-    try:
-        if click_see_all_responses(page):
-            scroll_to_load_comments(page)
-            comments_data = extract_comments(page)
-
-            if comments_data:
-                logger.info(f"Extracted {len(comments_data)} comments")
-                if comments_data:
-                    first = comments_data[0]
-                    sample = first["text"][:100] + (
-                        "..." if len(first["text"]) > 100 else ""
-                    )
-                    logger.info(f"First comment: {first['username']} - '{sample}'")
-            else:
-                logger.info("No comments found for this article")
-    except Exception as e:
-        logger.warning(f"Comment extraction error: {e}")
-
-    article_data["comments"] = comments_data
+    if click_see_all_responses(page):
+        scroll_to_load_comments(page)
+        comments_data = extract_comments(page)
     article_data["comments_count"] = len(comments_data)
+    article_data["comments"] = comments_data
 
     return article_data
 
 
 def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool:
-    """Save article metadata to database."""
+    """Save article metadata and comments to the database."""
     try:
-        # Check for empty title and skip if no title exists
         title = metadata.get("title", "").strip()
         if not title or title == "Unknown title":
-            logger.warning(f"Skipping article with URL ID {url_id} - No title found")
+            logger.warning(f"Skipping article with URL ID {url_id} - No title")
             return False
-            
-        # Prepare article data with author name directly included
+
         article_data = {
             "title": title,
-            "author_name": metadata.get("author", "Unknown"),  # Store author name directly
+            "author_name": metadata.get("author", "Unknown"),
             "date_published": metadata.get("date_published", ""),
             "date_modified": metadata.get("date_modified", ""),
             "description": metadata.get("description", ""),
@@ -287,79 +218,41 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
             "full_article_text": metadata.get("full_text", ""),
         }
 
-        # Check if article exists - use get() to avoid flush issues
-        existing = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
-        
-        # Process comments outside the article creation flow
-        comments_to_save = metadata.get("comments", [])
-        
-        if existing:
-            # Update existing record - safer than creating a new one
+        existing_article = (
+            session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        )
+
+        if existing_article:
             for key, value in article_data.items():
-                setattr(existing, key, value)
-            article_id = existing.id
+                setattr(existing_article, key, value)
+            article_id = existing_article.id
         else:
-            # Create new record - explicitly commit before handling comments
-            article = MediumArticle(url_id=url_id, **article_data)
-            session.add(article)
-            session.commit()  # Commit immediately to avoid flush issues
-            article_id = article.id
-
-        # Save comments if model exists and comments are available
-        if comments_to_save:
-            try:
-                # Try to import Comment class
-                from database.database import Comment
-                has_comment_model = True
-                
-                # Use a simpler approach to determine valid fields
-                valid_fields = ["article_id", "username", "text", "references_article", "claps", "likes"]
-                
-            except (ImportError, AttributeError):
-                has_comment_model = False
-                logger.warning("Comment model not found, skipping comment storage")
-
-            if has_comment_model:
-                comments_saved = 0
-                for comment_data in comments_to_save:
-                    try:
-                        # Start with required fields
-                        filtered_data = {"article_id": article_id}
-
-                        # Only add fields that exist in the model
-                        for field, value in {
-                            "username": comment_data.get("username", "Unknown"),
-                            "text": comment_data.get("text", ""),
-                            "references_article": comment_data.get("references_article", False),
-                        }.items():
-                            filtered_data[field] = value
-
-                        # Special handling for claps/likes field
-                        clap_value = comment_data.get("claps", "0")
-                        filtered_data["claps"] = clap_value  # Assume claps exists
-
-                        # Create and add comment - add and commit in small batches
-                        comment = Comment(**filtered_data)
-                        session.add(comment)
-                        
-                        # Commit every 10 comments to avoid large transactions
-                        comments_saved += 1
-                        if comments_saved % 10 == 0:
-                            session.commit()
-                            
-                    except Exception as e:
-                        logger.warning(f"Failed to create comment: {e}")
-
-                # Final commit for remaining comments
-                if comments_saved % 10 != 0:
-                    session.commit()
-                    
-                logger.info(f"Successfully saved {comments_saved} of {len(comments_to_save)} comments")
-        
-        # Final commit if not already done
-        if not comments_to_save:
+            new_article = MediumArticle(url_id=url_id, **article_data)
+            session.add(new_article)
             session.commit()
-            
+            article_id = new_article.id
+
+        comments_to_save = metadata.get("comments", [])
+        if comments_to_save:
+            for comment_data in comments_to_save:
+                try:
+                    filtered_data = {
+                        "article_id": article_id,
+                        "username": comment_data.get("username", "Unknown"),
+                        "text": comment_data.get("text", ""),
+                        "claps": comment_data.get("claps", "0"),
+                        "references_article": comment_data.get(
+                            "references_article", False
+                        ),
+                        "full_text": comment_data.get("full_html_text", ""),
+                    }
+                    session.add(Comment(**filtered_data))
+                except Exception as e:
+                    logger.error(f"Failed to insert comment: {e}")
+            session.commit()
+
+        else:
+            session.commit()
         logger.info(f"Saved article data for URL ID {url_id}")
         return True
 
@@ -371,5 +264,9 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
 
 def setup_signal_handlers(shutdown_event: threading.Event) -> None:
     """Set up signal handlers for graceful shutdown."""
-    signal.signal(signal.SIGINT, lambda sig, frame: shutdown_event.set())
-    signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_event.set())
+
+    def handler(sig, frame):
+        shutdown_event.set()
+
+    signal.signal(signal.SIGINT, handler)
+    signal.signal(signal.SIGTERM, handler)
