@@ -1,5 +1,5 @@
-from sqlalchemy import (Column, DateTime, Float, ForeignKey, Integer, Sequence,
-                        String, Text, create_engine, Boolean)
+from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
+                        Sequence, String, Text, create_engine)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 DATABASE_URL = "duckdb:///medium_articles.duckdb"  # Persistent storage
