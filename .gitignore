@@ -176,6 +176,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .ipynb
-.duckdb
 screenshots
-medium_articles.duckdb
+*.duckdb
+*.wal
