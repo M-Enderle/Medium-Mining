@@ -1,4 +1,9 @@
 site_name: Medium-Mining Documentation
+site_description: Comprehensive documentation for the Medium-Mining project
+site_author: Moritz Enderle
+repo_url: https://github.com/M-Enderle/Medium-Mining
+edit_uri: ""
+
 theme:
   name: material
   palette:
@@ -9,22 +14,111 @@ theme:
     - navigation.tracking
     - navigation.expand
     - navigation.indexes
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.path
     - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.share
+    - search.suggest
+  icon:
+    repo: fontawesome/brands/github
 
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
   - admonition
   - pymdownx.details
   - attr_list
   - md_in_html
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - git-revision-date-localized:
+      enable_creation_date: true
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_submodules: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/M-Enderle/Medium-Mining
+  version:
+    provider: mike
 
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
-  - Modules:
-    - Scraper: modules/scraper.md
-    - Database: modules/database.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+    - Quick Start: getting-started/quick-start.md
+    - Docker Setup: getting-started/docker.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Project Structure: architecture/project-structure.md
+    - Database Schema: architecture/database-schema.md
+    - Data Flow: architecture/data-flow.md
+  - Core Modules:
+    - Scraper:
+      - Overview: modules/scraper/overview.md
+      - Sitemap Scraper: modules/scraper/sitemap-scraper.md
+      - Article Scraper: modules/scraper/article-scraper.md
+      - Medium Helpers: modules/scraper/medium-helpers.md
+      - Configuration: modules/scraper/configuration.md
+    - Database:
+      - Overview: modules/database/overview.md
+      - Models: modules/database/models.md
+      - Connections: modules/database/connections.md
+      - Migrations: modules/database/migrations.md
+  - User Guide:
+    - Sitemap Scraping: user-guide/sitemap-scraping.md
+    - Article Scraping: user-guide/article-scraping.md
+    - Database Operations: user-guide/database-operations.md
+    - Example Workflows: user-guide/example-workflows.md
+  - Advanced Usage:
+    - Customizing Scrapers: advanced-usage/customizing-scrapers.md
+    - Performance Optimization: advanced-usage/performance-optimization.md
+    - Using Proxies: advanced-usage/using-proxies.md
+    - Automating Scraping: advanced-usage/automating-scraping.md
+  - Data Analysis:
+    - Overview: data-analysis/overview.md
+    - Basic Analysis: data-analysis/basic-analysis.md
+    - Content Analysis: data-analysis/content-analysis.md
+    - Temporal Analysis: data-analysis/temporal-analysis.md
+    - Export Data: data-analysis/export-data.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Development Setup: development/development-setup.md
+    - Testing: development/testing.md
+    - Code Style: development/code-style.md
+  - API Reference:
+    - Overview: api-reference/overview.md
+    - Scraper Module: api-reference/scraper.md
+    - Database Module: api-reference/database.md
+  - FAQ & Troubleshooting:
+    - FAQ: faq/faq.md
+    - Common Issues: faq/common-issues.md
+    - Debugging: faq/debugging.md
+  - Changelog: changelog.md
