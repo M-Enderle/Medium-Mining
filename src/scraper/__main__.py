@@ -95,6 +95,7 @@ async def async_main():
         type=bool,
         help="Run browser in headless mode (default: False)",
         default=None,
+        action="store_true"
     )
     article_parser.add_argument(
         "--workers",

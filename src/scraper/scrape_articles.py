@@ -79,7 +79,7 @@ def process_article(url_data, browser, worker_idx: int, session: Session):
             update_metrics()  # Update metrics only on success
 
     except Exception as e:
-        logging.error(f"Error on {url}: {e}")
+        logging.error(f"Error on {url}")
     finally:
         update_url_status(session, url_id, success)
 

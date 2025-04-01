@@ -20,8 +20,7 @@ URLS_TO_FETCH = 50
 
 def fetch_random_urls(session, count=None) -> List[Tuple[int, str]]:
     """Fetch random URLs from the database."""
-    # query = session.query(URL.id, URL.url).filter(URL.last_crawled == None)
-    query = session.query(URL.id, URL.url)
+    query = session.query(URL.id, URL.url).filter(URL.last_crawled == None)
 
     # Use the provided count, or fall back to the global URLS_TO_FETCH
     limit = count if count is not None else URLS_TO_FETCH
@@ -62,7 +61,7 @@ def click_see_all_responses(page: Page) -> bool:
             page.wait_for_load_state("load", timeout=10000)
             return True
     except Exception as e:
-        logger.warning(f"Failed to click responses button: {e}")
+        logger.warning(f"Failed to click responses button")
     return False
 
 
@@ -122,8 +121,7 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
             pass
         try:
             comment_data["full_text"] = el.inner_text()
-        except Exception as e:
-            logger.warning(f"Failed to extract full text: {e}")
+        except:
             comment_data["full_text"] = ""
         comments.append(comment_data)
     return comments
