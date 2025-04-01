@@ -24,6 +24,8 @@ isort = "^6.0.1"
 aiosqlite = "^0.21.0"
 aiohttp = "^3.11.14"
 playwright = "^1.51.0"
+mkdocs = "^1.6.1"
+mkdocs-material = "^9.5.15"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -32,3 +34,7 @@ ipykernel = "^6.29.5"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+docs-serve = "mkdocs:serve"
+docs-build = "mkdocs:build"

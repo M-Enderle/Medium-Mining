@@ -74,6 +74,21 @@ Format code using Black and isort:
 poetry run black src/ && poetry run isort src/
 ```
 
+## Documentation
+
+The project includes comprehensive documentation created with MkDocs:
+
+```bash
+# Install dependencies including mkdocs and mkdocs-material
+poetry install
+
+# Serve docs locally (available at http://127.0.0.1:8000)
+poetry run mkdocs serve
+
+# Build static documentation site
+poetry run mkdocs build
+```
+
 ## Database Schema
 
 The project uses SQLAlchemy with the following main models:
