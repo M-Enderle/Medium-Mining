@@ -42,6 +42,7 @@ class URL(Base):
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"))
     last_crawled = Column(DateTime, nullable=True)  # Already used in code
     crawl_status = Column(String(50), nullable=True)  # Already used in code
+    found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
 
 
 class MediumArticle(Base):
