@@ -39,7 +39,7 @@ class URL(Base):
     last_modified = Column(String(50))
     change_freq = Column(String(50))
     priority = Column(Float)
-    sitemap_id = Column(Integer, ForeignKey("sitemaps.id"))
+    sitemap_id = Column(Integer, ForeignKey("sitemaps.id"), nullable=True)
     last_crawled = Column(DateTime, nullable=True)  # Already used in code
     crawl_status = Column(String(50), nullable=True)  # Already used in code
     found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
