@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from database.database import SessionLocal
 from scraper.medium_helpers import (extract_metadata_and_comments,
                                     fetch_random_urls, persist_article_data,
-                                    update_url_status)
+                                    update_url_status, verfiy_url_existence)
 
 logging.basicConfig(
     level=logging.INFO,

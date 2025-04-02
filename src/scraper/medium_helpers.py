@@ -275,3 +275,18 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
+
+
+def verfiy_url_existence(session, page: Page):
+    """ Retrieves all URLs from the page and checks if the URL exists in the database. """
+    try:
+        all_urls = page.query_selector_all("a")
+        for url in all_urls:
+            if not session.query(URL).filter(URL.url == url.get_attribute("href")).first():
+                print(f"URL {url.get_attribute('href')} does not exist in the database.")
+                
+    except Exception as e:
+        logger.error(f"Error verifying URL existence: {e}")
+        return False
+    
+    return True
