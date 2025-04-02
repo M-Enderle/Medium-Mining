@@ -248,9 +248,9 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
 
         recommendations = metadata.get("recommendations", [])
         for url in recommendations:
-            url_id = session.query(URL.id).filter(URL.url == url).scalar()
-            if url_id is None:
-                url_entry = URL(url=url, sitemap_id=0)
+            rec_url_id = session.query(URL.id).filter(URL.url == url).scalar()
+            if rec_url_id is None:
+                url_entry = URL(url=url, sitemap_id=None, found_on_url_id=rec_url_id)
                 session.add(url_entry)
                 session.commit()
                 logger.debug(f"Added recommendation URL: {url}")
