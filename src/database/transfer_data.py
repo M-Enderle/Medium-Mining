@@ -1,68 +1,121 @@
-import duckdb
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+import sqlite3
+from database import (Base, SessionLocal, Sitemap, URL, create_engine,
+                               setup_database, sessionmaker)
+from tqdm import tqdm
 
-# Source database URL (replace with your actual source URL)
-SOURCE_DATABASE_URL = "duckdb:///medium_articles_full.duckdb"
-# Destination database URL (using the one from database.py)
-DESTINATION_DATABASE_URL = "duckdb:///medium_articles.duckdb"
+# Database file path
+DATABASE_PATH = 'medium_articles.db'  # Replace with your desired database file
 
-# Chunk size for reading data (adjust based on your memory constraints)
-CHUNK_SIZE = 100000
+def connect_to_db():
+    """Connects to the SQLite database."""
+    try:
+        conn = sqlite3.connect(DATABASE_PATH)
+        print("Connected to database successfully")
+        return conn
+    except sqlite3.Error as e:
+        print(f"Error connecting to database: {e}")
+        return None
+    
 
-def transfer_data(source_url, destination_url, chunk_size):
-    """Transfers data from source DuckDB to destination DuckDB in chunks."""
+def print_table_names(conn):
+    """Prints the names of all tables in the database."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        print("Tables in the database:")
+        for table in tables:
+            print(table[0])
+    except sqlite3.Error as e:
+        print(f"Error fetching table names: {e}")
 
-    # Create SQLAlchemy engines for both databases
-    source_engine = create_engine(source_url)
-    dest_engine = create_engine(destination_url)
+def print_table_columns(conn, table_name):
+    """Prints all columns in a specified table."""
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA table_info({table_name});")
+        columns = cursor.fetchall()
+        print(f"Columns in table '{table_name}':")
+        for column in columns:
+            # column[1] is the column name, column[2] is the data type
+            print(f"  {column[1]} ({column[2]})")
+    except sqlite3.Error as e:
+        print(f"Error fetching column information: {e}")
 
-    # Create sessions
-    SourceSession = sessionmaker(bind=source_engine)
-    DestSession = sessionmaker(bind=dest_engine)
-    source_session = SourceSession()
-    dest_session = DestSession()
+
+def transfer_data():
+    """Transfers data from SQLite to DuckDB with a progress bar."""
+    sqlite_conn = connect_to_db()
+    if not sqlite_conn:
+        print("Aborting data transfer due to SQLite connection failure.")
+        return
+
+    duckdb_engine = create_engine("duckdb:///medium_articles.duckdb", echo=False)
+    Base.metadata.create_all(duckdb_engine)
+    DuckDB_Session = sessionmaker(bind=duckdb_engine)
+    duckdb_session = DuckDB_Session()
 
     try:
         # Transfer Sitemaps
-        offset = 0
-        while True:
-            sitemaps = source_session.execute(text("SELECT id, sitemap_url, articles_count FROM sitemaps ORDER BY id LIMIT :limit OFFSET :offset"),
-                                            {"limit": chunk_size, "offset": offset}).fetchall()
-            if not sitemaps:
-                break
+        sqlite_cursor = sqlite_conn.cursor()
+        sqlite_cursor.execute("SELECT id, sitemap_url, articles_count FROM sitemaps")
+        sitemaps = sqlite_cursor.fetchall()
 
+        with tqdm(total=len(sitemaps), desc="Transferring Sitemaps") as pbar:
             for sitemap in sitemaps:
-                dest_session.execute(text("INSERT INTO sitemaps (id, sitemap_url, articles_count) VALUES (:id, :sitemap_url, :articles_count)"),
-                                    {"id": sitemap[0], "sitemap_url": sitemap[1], "articles_count": sitemap[2]})
-            
-            dest_session.commit()
-            offset += chunk_size
-            print(f"Transferred Sitemaps: {offset}")
+                sitemap_id, sitemap_url, articles_count = sitemap
+                new_sitemap = Sitemap(
+                    id=sitemap_id, sitemap_url=sitemap_url, articles_count=articles_count
+                )
+                duckdb_session.add(new_sitemap)
+                pbar.update(1)
 
         # Transfer URLs
-        offset = 0
-        while True:
-            urls = source_session.execute(text("SELECT id, url, last_modified, change_freq, priority, sitemap_id FROM urls ORDER BY id LIMIT :limit OFFSET :offset"),
-                                        {"limit": chunk_size, "offset": offset}).fetchall()
-            if not urls:
-                break
+        sqlite_cursor.execute(
+            "SELECT id, url, last_modified, change_freq, priority, sitemap_id FROM urls"
+        )
+        urls = sqlite_cursor.fetchall()
 
+        with tqdm(total=len(urls), desc="Transferring URLs") as pbar:
             for url in urls:
-                dest_session.execute(text("INSERT INTO urls (id, url, last_modified, change_freq, priority, sitemap_id) VALUES (:id, :url, :last_modified, :change_freq, :priority, :sitemap_id)"),
-                                    {"id": url[0], "url": url[1], "last_modified": url[2], "change_freq": url[3], "priority": url[4], "sitemap_id": url[5]})
+                (
+                    url_id,
+                    url_value,
+                    last_modified,
+                    change_freq,
+                    priority,
+                    sitemap_id,
+                ) = url
+                new_url = URL(
+                    id=url_id,
+                    url=url_value,
+                    last_modified=last_modified,
+                    change_freq=change_freq,
+                    priority=priority,
+                    sitemap_id=sitemap_id,
+                )
+                duckdb_session.add(new_url)
+                pbar.update(1)
 
-            dest_session.commit()
-            offset += chunk_size
-            print(f"Transferred URLs: {offset}")
+        duckdb_session.commit()
+        print("Data transfer completed successfully.")
 
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        dest_session.rollback()
+    except sqlite3.Error as e:
+        print(f"Error during data transfer: {e}")
+        duckdb_session.rollback()
     finally:
-        source_session.close()
-        dest_session.close()
+        sqlite_conn.close()
+        duckdb_session.close()
 
+
+# Example usage:
 if __name__ == "__main__":
-    transfer_data(SOURCE_DATABASE_URL, DESTINATION_DATABASE_URL, CHUNK_SIZE)
-    print("Data transfer complete.")
+    # setup_database()  # Ensure DuckDB database and tables are created
+    transfer_data()
+    connection = connect_to_db()
+    if connection:
+        print_table_names(connection)
+        print_table_columns(connection, "urls")
+        print_table_columns(connection, "sitemaps")
+        connection.close()  # Close the connection when done
+        print("Connection closed.")
