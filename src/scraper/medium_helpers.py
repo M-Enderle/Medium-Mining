@@ -161,12 +161,8 @@ def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
                     ),
                     "is_free": (
                         "Paid"
-                        if json_ld.get("isAccessibleForFree") is True
-                        else (
-                            "Member-Only"
-                            if json_ld.get("isAccessibleForFree") is False
-                            else "Public"
-                        )
+                        if page.query_selector("article.meteredContent")
+                        else "Public"
                     ),
                 }
             )
