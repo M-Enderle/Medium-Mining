@@ -70,34 +70,43 @@ def transfer_data():
                 duckdb_session.add(new_sitemap)
                 pbar.update(1)
 
-        # Transfer URLs
-        sqlite_cursor.execute(
-            "SELECT id, url, last_modified, change_freq, priority, sitemap_id FROM urls"
-        )
-        urls = sqlite_cursor.fetchall()
+        # Transfer URLs in batches
+        sqlite_cursor.execute("SELECT COUNT(*) FROM urls")
+        total_urls = sqlite_cursor.fetchone()[0]
+        batch_size = 100000
+        offset = 0
 
-        with tqdm(total=len(urls), desc="Transferring URLs") as pbar:
-            for url in urls:
-                (
-                    url_id,
-                    url_value,
-                    last_modified,
-                    change_freq,
-                    priority,
-                    sitemap_id,
-                ) = url
-                new_url = URL(
-                    id=url_id,
-                    url=url_value,
-                    last_modified=last_modified,
-                    change_freq=change_freq,
-                    priority=priority,
-                    sitemap_id=sitemap_id,
+        with tqdm(total=total_urls, desc="Transferring URLs") as pbar:
+            while offset < total_urls:
+                sqlite_cursor.execute(
+                    "SELECT id, url, last_modified, change_freq, priority, sitemap_id FROM urls LIMIT ? OFFSET ?",
+                    (batch_size, offset),
                 )
-                duckdb_session.add(new_url)
-                pbar.update(1)
+                urls = sqlite_cursor.fetchall()
 
-        duckdb_session.commit()
+                for url in urls:
+                    (
+                        url_id,
+                        url_value,
+                        last_modified,
+                        change_freq,
+                        priority,
+                        sitemap_id,
+                    ) = url
+                    new_url = URL(
+                        id=url_id,
+                        url=url_value,
+                        last_modified=last_modified,
+                        change_freq=change_freq,
+                        priority=priority,
+                        sitemap_id=sitemap_id,
+                    )
+                    duckdb_session.add(new_url)
+                    pbar.update(1)
+
+                duckdb_session.commit()  # Commit after each batch
+                offset += batch_size
+
         print("Data transfer completed successfully.")
 
     except sqlite3.Error as e:
