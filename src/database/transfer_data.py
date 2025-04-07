@@ -2,6 +2,7 @@ import sqlite3
 from database import (Base, SessionLocal, Sitemap, URL, create_engine,
                                setup_database, sessionmaker)
 from tqdm import tqdm
+from time import time
 
 # Database file path
 DATABASE_PATH = 'medium_articles.db'  # Replace with your desired database file
@@ -70,18 +71,36 @@ def transfer_data():
                 duckdb_session.add(new_sitemap)
                 pbar.update(1)
 
+        print("Committing sitemaps...")
+        duckdb_session.commit()  # Commit after transferring all sitemaps
+        print("Done committing sitemaps.")
+
         # Transfer URLs in batches
         sqlite_cursor.execute("SELECT COUNT(*) FROM urls")
         total_urls = sqlite_cursor.fetchone()[0]
-        batch_size = 100000
+        batch_size = 1000000
         offset = 0
 
+        postfix_info = {
+            "Currently committing": False,
+            "Currently executing": False,
+            "Last Commit Time": 0,
+            "Last Execute Time": 0,
+        }
+
         with tqdm(total=total_urls, desc="Transferring URLs") as pbar:
+            pbar.set_description(f"Batch {offset // batch_size + 1}/{(total_urls // batch_size) + 1}")
             while offset < total_urls:
+                postfix_info["Currently executing"] = True
+                before = time()
+                pbar.set_postfix(postfix_info)
                 sqlite_cursor.execute(
                     "SELECT id, url, last_modified, change_freq, priority, sitemap_id FROM urls LIMIT ? OFFSET ?",
                     (batch_size, offset),
                 )
+                postfix_info["Last Execute Time"] = time() - before
+                postfix_info["Currently executing"] = False
+                pbar.set_postfix(postfix_info)
                 urls = sqlite_cursor.fetchall()
 
                 for url in urls:
@@ -103,8 +122,13 @@ def transfer_data():
                     )
                     duckdb_session.add(new_url)
                     pbar.update(1)
-
+                postfix_info["Currently committing"] = True
+                before = time()
+                pbar.set_postfix(postfix_info)
                 duckdb_session.commit()  # Commit after each batch
+                postfix_info["Last Commit Time"] = time() - before
+                postfix_info["Currently committing"] = False
+                pbar.set_postfix(postfix_info)
                 offset += batch_size
 
         print("Data transfer completed successfully.")
