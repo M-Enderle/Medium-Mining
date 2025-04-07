@@ -25,7 +25,7 @@ SCREENSHOT_DIR = Path("./screenshots").mkdir(exist_ok=True, parents=True) or Pat
     "./screenshots"
 )
 MAX_CONCURRENT = 1
-HEADLESS = False
+HEADLESS = True
 shutdown_event = Event()
 completed_tasks = 0
 start_time = 0
@@ -138,9 +138,9 @@ def handle_signal(signum, frame):
     shutdown_event.set()
 
 
-def main():
+def main(args=None):
     """Main execution function."""
-    global start_time
+    global start_time, HEADLESS, MAX_CONCURRENT
     start_time = time.time()
 
     signal.signal(signal.SIGINT, handle_signal)
@@ -155,7 +155,17 @@ def main():
         url_data = []
 
         with session_factory() as session:  # Get URLs in a separate session
+            if args and args.url_count:
+                import scraper.medium_helpers
+                scraper.medium_helpers.URLS_TO_FETCH = args.url_count
             url_data = fetch_random_urls(session)
+
+        # Override headless and workers if provided in args
+        if args:
+            if args.headless is not None:
+                HEADLESS = args.headless
+            if args.workers:
+                MAX_CONCURRENT = args.workers
 
         logging.debug(
             f"Starting to process {len(url_data)} URLs with {MAX_CONCURRENT} workers"
@@ -163,6 +173,7 @@ def main():
         task_queue = Queue()
 
         def create_browser(playwright):
+            print(HEADLESS)
             return playwright.chromium.launch(
                 headless=HEADLESS,
                 args=["--disable-blink-features=AutomationControlled"],
