@@ -1,6 +1,7 @@
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
                         Sequence, String, Text, create_engine)
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.sql import func
 
 DATABASE_URL = "duckdb:///medium_articles.duckdb"  # Persistent storage
 Base = declarative_base()
@@ -104,6 +105,4 @@ def setup_database():
 
 
 if __name__ == "__main__":
-    # Set up the database
     setup_database()
-    
