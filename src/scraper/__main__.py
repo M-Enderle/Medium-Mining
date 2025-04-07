@@ -40,27 +40,10 @@ async def run_sitemap_scraper(args):
 
 def run_article_scraper(args):
     """Run the article scraper with the provided arguments"""
-    # The article scraper already has its own logging configuration
-    if args.url_count:
-        # Modify the fetch_random_urls function's behavior
-        import scraper.medium_helpers
-
-        scraper.medium_helpers.URLS_TO_FETCH = args.url_count
-
-    # Handle headless mode
-    if args.headless is not None:
-        import scraper.scrape_articles
-
-        scraper.scrape_articles.HEADLESS = args.headless
-
-    # Handle worker count
-    if args.workers:
-        import scraper.scrape_articles
-
-        scraper.scrape_articles.MAX_CONCURRENT = args.workers
-
     try:
-        scrape_articles_main()
+        import scraper.scrape_articles
+
+        scraper.scrape_articles.main(args)
         return 0
     except Exception as e:
         logging.error(f"Article scraper failed: {e}")
@@ -92,9 +75,9 @@ async def async_main():
     )
     article_parser.add_argument(
         "--headless",
-        type=bool,
-        help="Run browser in headless mode (default: False)",
-        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Run browser in headless mode (default: True)",
+        default=True,
     )
     article_parser.add_argument(
         "--workers",
