@@ -129,6 +129,33 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
     return comments
 
 
+def extract_recommendation_urls(page: Page) -> List[str]:
+    """Extract recommended article URLs."""
+    urls = []
+    header = page.locator('h2', has_text="Recommended from Medium").first
+    if not header:
+        logger.warning("No recommendations found")
+        return urls
+    
+    container = header.evaluate_handle("el => el.closest('div')")
+    if not container:
+        logger.warning("No recommendations container found")
+        return urls
+    
+    articles = container.query_selector_all('a[href^="https://medium.com/"]:has(h2, h3)')
+    for article in articles:
+        try:
+            url = article.get_attribute("href") or ""
+            if url:
+                urls.append(url)
+            else:
+                raise Exception("No URL found")
+        except Exception as e:
+            logger.warning(f"Failed to extract recommendation URL: {e}")
+            
+    logger.debug(f"Extracted {len(urls)} recommendations")
+    return urls
+
 def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
     """Extract article metadata and comments."""
     article_data = {
@@ -215,6 +242,17 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
             "full_article_text": metadata.get("full_text", ""),
         }
 
+        recommendations = metadata.get("recommendations", [])
+        for url in recommendations:
+            rec_url_id = session.query(URL.id).filter(URL.url == url).scalar()
+            if rec_url_id is None:
+                url_entry = URL(url=url, sitemap_id=None, found_on_url_id=rec_url_id)
+                session.add(url_entry)
+                session.commit()
+                logger.debug(f"Added recommendation URL: {url}")
+            else:
+                logger.debug(f"URL already exists: {url}")
+
         existing_article = (
             session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
         )
@@ -254,7 +292,11 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
         logger.info(
             f"Article '{title[:50]}...' has {metadata.get('comments_count', 0)} comments"
         )
+        logger.info(
+            f"Article '{title[:50]}...' has {len(metadata.get('recommendations', []))} recommendations"
+        )
         logger.debug(f"Saved article data for URL ID {url_id}")
+        logger.debug(f"Saved recommendations for URL ID {url_id}")
         return True
 
     except Exception as e:

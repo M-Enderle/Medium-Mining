@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from database.database import SessionLocal
 from scraper.medium_helpers import (extract_metadata_and_comments,
                                     fetch_random_urls, persist_article_data,
-                                    update_url_status, verfiy_url_existence)
+                                    update_url_status, extract_recommendation_urls)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +65,10 @@ def process_article(url_data, browser, worker_idx: int, session: Session):
             page.mouse.wheel(0, random.randint(100, 300))
 
             metadata = extract_metadata_and_comments(page)
+
+            recommendations = extract_recommendation_urls(page)
+            if recommendations:
+                metadata["recommendations"] = recommendations
 
             # Move persist_article_data inside the try block
             if persist_article_data(
