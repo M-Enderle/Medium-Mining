@@ -177,7 +177,6 @@ def main(args=None):
         task_queue = Queue()
 
         def create_browser(playwright):
-            print(HEADLESS)
             return playwright.chromium.launch(
                 headless=HEADLESS,
                 args=["--disable-blink-features=AutomationControlled"],
