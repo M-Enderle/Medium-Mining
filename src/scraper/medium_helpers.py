@@ -137,15 +137,16 @@ def extract_recommendation_urls(page: Page) -> List[str]:
         logger.warning("No recommendations found")
         return urls
     
-    container = header.evaluate_handle("el => el.closest('div')")
+    container = header.locator('xpath=..') # Get parent element using XPath
     if not container:
         logger.warning("No recommendations container found")
         return urls
-    
-    articles = container.query_selector_all('a[href^="https://medium.com/"]:has(h2, h3)')
+
+    articles = container.locator('div[role="link"]').all()
+    print(articles)
     for article in articles:
         try:
-            url = article.get_attribute("href") or ""
+            url = article.get_attribute("data-href") or ""
             if url:
                 urls.append(url)
             else:
@@ -153,8 +154,8 @@ def extract_recommendation_urls(page: Page) -> List[str]:
         except Exception as e:
             logger.warning(f"Failed to extract recommendation URL: {e}")
             
-    logger.debug(f"Extracted {len(urls)} recommendations")
     return urls
+
 
 def extract_metadata_and_comments(page: Page) -> Dict[str, Any]:
     """Extract article metadata and comments."""
@@ -249,7 +250,7 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
                 url_entry = URL(url=url, sitemap_id=None, found_on_url_id=rec_url_id)
                 session.add(url_entry)
                 session.commit()
-                logger.debug(f"Added recommendation URL: {url}")
+                logger.warning(f"Added recommendation URL: {url}")
             else:
                 logger.debug(f"URL already exists: {url}")
 
@@ -290,11 +291,9 @@ def persist_article_data(session, url_id: int, metadata: Dict[str, Any]) -> bool
             session.commit()
 
         logger.info(
-            f"Article '{title[:50]}...' has {metadata.get('comments_count', 0)} comments"
+            f"Article '{title[:50]}...' has {metadata.get('comments_count', 0)} comments and {len(recommendations)} recommendations"
         )
-        logger.info(
-            f"Article '{title[:50]}...' has {len(metadata.get('recommendations', []))} recommendations"
-        )
+
         logger.debug(f"Saved article data for URL ID {url_id}")
         logger.debug(f"Saved recommendations for URL ID {url_id}")
         return True
