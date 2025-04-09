@@ -39,41 +39,6 @@ poetry run python -m database.database
 poetry run playwright install
 ```
 
-## Usage
-
-### Sitemap Scraper
-
-Collect Medium article URLs from sitemaps:
-
-```bash
-poetry run python -m scraper sitemap [--timeout 0.05] [--verbose]
-```
-
-Options:
-- `--timeout`: Average delay between requests in seconds (default: 0.05)
-- `--verbose`: Enable verbose logging to console
-
-### Article Scraper
-
-Extract content and metadata from Medium articles:
-
-```bash
-poetry run python -m scraper article [--url-count 50] [--headless true] [--workers 1]
-```
-
-Options:
-- `--url-count`: Number of random URLs to process (default: 50)
-- `--headless`: Run browser in headless mode (default: false)
-- `--workers`: Number of concurrent workers (default: 1)
-
-## Development
-
-Format code using Black and isort:
-
-```bash
-poetry run black src/ && poetry run isort src/
-```
-
 ## Database Schema
 
 The project uses SQLAlchemy with the following main models:
