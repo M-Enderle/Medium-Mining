@@ -27,6 +27,7 @@ playwright = "^1.51.0"
 tqdm = "^4.67.1"
 jupyter = "^1.1.1"
 ipywidgets = "^8.1.5"
+pytest = "^8.3.5"
 
 
 [tool.poetry.group.dev.dependencies]
