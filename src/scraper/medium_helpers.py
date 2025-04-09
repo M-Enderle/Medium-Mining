@@ -268,7 +268,9 @@ def get_or_create_author(
     )
     if not author:
         if not username:
-            username = re.search(r"^https://([^/]+)\.medium\.com", medium_url).group(1)
+            username_match = re.search(r"^https://([^/]+)\.medium\.com", medium_url)
+            if username_match is not None:
+                username = username_match.group(1)
         author = Author(username=username, medium_url=medium_url or f"https://medium.com/{username}")
         session.add(author)
         session.commit()
@@ -451,9 +453,11 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         session.commit()
 
         recommendation_urls = extract_recommendation_urls(page)
-        for url in recommendation_urls:
+        max_id = session.query(func.max(URL.id)).scalar()
+        for i, url in enumerate(recommendation_urls):
             if not session.query(URL).filter(URL.url == url).first():
-                new_url = URL(url=url, found_on_url_id=url_id, priority=1.1)
+                new_url_id = max_id + i + 1
+                new_url = URL(id=new_url_id, url=url, found_on_url_id=url_id, priority=1.1)
                 session.add(new_url)
                 logger.debug(f"New URL added: {url}")
             else:
