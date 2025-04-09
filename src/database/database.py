@@ -1,5 +1,5 @@
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
-                        Sequence, String, Text, create_engine, Date, SmallInteger)
+                        Sequence, String, Text, create_engine, Date, SmallInteger, Numeric)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
@@ -42,7 +42,7 @@ class URL(Base):
     url = Column(String(255), unique=True, nullable=False)
     last_modified = Column(Date, nullable=True)
     change_freq = Column(SmallInteger, nullable=True)
-    priority = Column(Float(precision=5, scale=1))
+    priority = Column(Numeric(precision=5, scale=1), nullable=True)
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"), nullable=True)
     last_crawled = Column(DateTime, nullable=True)
     crawl_status = Column(String(12), nullable=True)
