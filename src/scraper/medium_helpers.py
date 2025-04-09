@@ -462,7 +462,6 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
                 new_url = URL(id=new_url_id, url=url, found_on_url_id=url_id, priority=1.1)
                 session.add(new_url)
                 logger.debug(f"New URL added: {url}")
-                logger.info(f"Inserted at id {new_url_id}: {url}")
             else:
                 session.query(URL).filter(URL.url == url).update(
                     {"priority": URL.priority + 0.1}
