@@ -9,9 +9,13 @@ from playwright.sync_api import Browser, BrowserContext, sync_playwright
 from sqlalchemy.orm import Session
 
 from database.database import SessionLocal
-from scraper.medium_helpers import (fetch_random_urls, persist_article_data,
-                                    setup_signal_handlers, update_url_status,
-                                    verify_its_an_article)
+from scraper.medium_helpers import (
+    fetch_random_urls,
+    persist_article_data,
+    setup_signal_handlers,
+    update_url_status,
+    verify_its_an_article,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -162,6 +166,7 @@ def process_article(
         with context.new_page() as page:
             logger.debug(f"Processing URL: {url}")
             page.goto(url, wait_until="load", timeout=20000)
+            page.wait_for_timeout(random.uniform(500, 2000))
 
             random_mouse_movement(page)
 

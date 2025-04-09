@@ -34,6 +34,14 @@ def process_url_element(url_elem, ns, sitemap_id):
     changefreq = url_elem.find("ns:changefreq", ns)
     changefreq = changefreq.text if changefreq is not None else None
 
+    update_freq_mapping = {
+        "always": 0,
+        "hourly": 1,
+        "daily": 2,
+        "monthly": 3,
+    }
+    changefreq = update_freq_mapping.get(changefreq, None)
+
     priority = url_elem.find("ns:priority", ns)
     priority = float(priority.text) if priority is not None else None
 

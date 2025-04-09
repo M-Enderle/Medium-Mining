@@ -8,11 +8,10 @@ from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
 
 from playwright.sync_api import Page
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 from sqlalchemy.orm import Session
 
-from database.database import (URL, Author, Comment, MediumArticle, Sitemap,
-                               get_session)
+from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -259,7 +258,12 @@ def get_or_create_author(
 
     author = (
         session.query(Author)
-        .filter(or_(Author.username == username, Author.medium_url == medium_url))
+        .filter(
+            or_(
+                and_(Author.username == username, Author.username.isnot(None)),
+                and_(Author.medium_url == medium_url, Author.medium_url.isnot(None)),
+            )
+        )
         .first()
     )
     if not author:
@@ -447,11 +451,13 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         recommendation_urls = extract_recommendation_urls(page)
         for url in recommendation_urls:
             if not session.query(URL).filter(URL.url == url).first():
-                new_url = URL(url=url, found_on_url_id=url_id, priority=1.1) 
+                new_url = URL(url=url, found_on_url_id=url_id, priority=1.1)
                 session.add(new_url)
                 logger.debug(f"New URL added: {url}")
             else:
-                session.query(URL).filter(URL.url == url).update({"priority": URL.priority + 0.1})
+                session.query(URL).filter(URL.url == url).update(
+                    {"priority": URL.priority + 0.1}
+                )
 
         session.commit()
 
