@@ -1,11 +1,14 @@
 import sqlite3
-from database import (Base, SessionLocal, Sitemap, URL, create_engine,
-                               setup_database, sessionmaker)
-from tqdm import tqdm
 from time import time
 
+from tqdm import tqdm
+
+from database import (URL, Base, SessionLocal, Sitemap, create_engine,
+                      sessionmaker, setup_database)
+
 # Database file path
-DATABASE_PATH = 'medium_articles.db'  # Replace with your desired database file
+DATABASE_PATH = "medium_articles.db"  # Replace with your desired database file
+
 
 def connect_to_db():
     """Connects to the SQLite database."""
@@ -16,7 +19,7 @@ def connect_to_db():
     except sqlite3.Error as e:
         print(f"Error connecting to database: {e}")
         return None
-    
+
 
 def print_table_names(conn):
     """Prints the names of all tables in the database."""
@@ -29,6 +32,7 @@ def print_table_names(conn):
             print(table[0])
     except sqlite3.Error as e:
         print(f"Error fetching table names: {e}")
+
 
 def print_table_columns(conn, table_name):
     """Prints all columns in a specified table."""
@@ -66,7 +70,9 @@ def transfer_data():
             for sitemap in sitemaps:
                 sitemap_id, sitemap_url, articles_count = sitemap
                 new_sitemap = Sitemap(
-                    id=sitemap_id, sitemap_url=sitemap_url, articles_count=articles_count
+                    id=sitemap_id,
+                    sitemap_url=sitemap_url,
+                    articles_count=articles_count,
                 )
                 duckdb_session.add(new_sitemap)
                 pbar.update(1)
@@ -89,7 +95,9 @@ def transfer_data():
         }
 
         with tqdm(total=total_urls, desc="Transferring URLs") as pbar:
-            pbar.set_description(f"Batch {offset // batch_size + 1}/{(total_urls // batch_size) + 1}")
+            pbar.set_description(
+                f"Batch {offset // batch_size + 1}/{(total_urls // batch_size) + 1}"
+            )
             while offset < total_urls:
                 postfix_info["Currently executing"] = True
                 before = time()
