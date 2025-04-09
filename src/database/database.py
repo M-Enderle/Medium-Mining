@@ -1,5 +1,5 @@
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
-                        Sequence, String, Text, create_engine)
+                        Sequence, String, Text, create_engine, Date, SmallInteger)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
@@ -22,7 +22,7 @@ class Sitemap(Base):
         primary_key=True,
     )
     sitemap_url = Column(String(255), unique=True, nullable=False)
-    articles_count = Column(Integer, nullable=True)
+    articles_count = Column(SmallInteger, nullable=True)
 
     urls = relationship("URL", back_populates="sitemap")
 
@@ -40,12 +40,12 @@ class URL(Base):
     )
 
     url = Column(String(255), unique=True, nullable=False)
-    last_modified = Column(String(50))
-    change_freq = Column(String(50))
-    priority = Column(Float)
+    last_modified = Column(Date, nullable=True)
+    change_freq = Column(SmallInteger, nullable=True)
+    priority = Column(Float(precision=5, scale=1))
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"), nullable=True)
     last_crawled = Column(DateTime, nullable=True)
-    crawl_status = Column(String(50), nullable=True)
+    crawl_status = Column(String(12), nullable=True)
     crawl_failure_reason = Column(String(255), nullable=True)
     found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
 
@@ -89,12 +89,12 @@ class MediumArticle(Base):
     date_modified = Column(DateTime, nullable=True)
     date_created = Column(DateTime, nullable=True)
     description = Column(Text, nullable=True)
-    publisher_type = Column(String(100), nullable=True)
+    publisher_type = Column(String(50), nullable=True)
     is_free = Column(Boolean, nullable=True)
     claps = Column(Integer, nullable=True)
-    comments_count = Column(Integer, nullable=True)
+    comments_count = Column(SmallInteger, nullable=True)
     full_article_text = Column(Text, nullable=True)
-    read_time = Column(Integer, nullable=True)
+    read_time = Column(SmallInteger, nullable=True)
     type = Column(String(50), nullable=True)
 
     tags = Column(ARRAY(String), nullable=True)
@@ -118,7 +118,7 @@ class Comment(Base):
     author_id = Column(Integer, ForeignKey("authors.id"), nullable=True)
     text = Column(Text, nullable=True)
     full_text = Column(Text, nullable=False)
-    claps = Column(Integer, nullable=True)
+    claps = Column(SmallInteger, nullable=True)
     references_article = Column(Boolean, nullable=False)
     author = relationship("Author", back_populates="comments")
     article = relationship("MediumArticle", back_populates="comments")
