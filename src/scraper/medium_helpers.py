@@ -267,7 +267,9 @@ def get_or_create_author(
         .first()
     )
     if not author:
-        author = Author(username=username, medium_url=medium_url)
+        if not username:
+            username = re.search(r"^https://([^/]+)\.medium\.com", medium_url).group(1)
+        author = Author(username=username, medium_url=medium_url or f"https://medium.com/{username}")
         session.add(author)
         session.commit()
         logger.debug(f"Created new author: {author.username} ({author.medium_url})")
@@ -419,8 +421,8 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
             description=metadata.get("description"),
             publisher_type=metadata.get("publisher_type"),
             is_free=not is_paid_article(page),
-            claps=get_claps(page),
-            comments_count=comments_count,
+            claps=get_claps(page) or 0,
+            comments_count=comments_count or 0,
             full_article_text=extract_text(page),
             read_time=get_read_time(page),
             type=metadata.get("type"),
