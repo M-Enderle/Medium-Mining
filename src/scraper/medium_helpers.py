@@ -161,8 +161,8 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
         # TODO check that the author is handled correctly
         comment = {
             "references_article": el.locator("p[id^='embedded-quote']").count() > 0,
-            "username": "Unknown",
-            "author_name": "Unknown",
+            "username": None,
+            "author_name": None,
             "medium_username": None,
             "text": None,
             "claps": None,
@@ -184,9 +184,13 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
                 "(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"
             )
             if claps := el.locator("div.pw-multi-vote-count").first:
-                comment["claps"] = claps.inner_text(timeout=500) or "0"
-        except:
-            pass
+                try:
+                    comment["claps"] = int(claps.inner_text(timeout=500)) or 0
+                except Exception as e:
+                    comment["claps"] = 0
+                    logger.debug(f"Failed to parse claps: {e}")
+        except Exception as e:
+            logger.debug(f"Error extracting comment text: {e}")
 
         comments.append(comment)
     return comments
@@ -437,6 +441,17 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
                     references_article=comment.get("references_article"),
                 )
                 session.add(comment_obj)
+
+        session.commit()
+
+        recommendation_urls = extract_recommendation_urls(page)
+        for url in recommendation_urls:
+            if not session.query(URL).filter(URL.url == url).first():
+                new_url = URL(url=url, found_on_url_id=url_id, priority=1.1) 
+                session.add(new_url)
+                logger.debug(f"New URL added: {url}")
+            else:
+                session.query(URL).filter(URL.url == url).update({"priority": URL.priority + 0.1})
 
         session.commit()
 
