@@ -94,6 +94,13 @@ def transfer_data():
             "Last Execute Time": 0,
         }
 
+        update_freq_mapping = {
+            "always": 0,
+            "hourly": 1,
+            "daily": 2,
+            "monthly": 3,
+        }
+
         with tqdm(total=total_urls, desc="Transferring URLs") as pbar:
             pbar.set_description(
                 f"Batch {offset // batch_size + 1}/{(total_urls // batch_size) + 1}"
@@ -124,7 +131,8 @@ def transfer_data():
                         id=url_id,
                         url=url_value,
                         last_modified=last_modified,
-                        change_freq=change_freq,
+                        change_freq=update_freq_mapping.get(
+                            change_freq, None),
                         priority=priority,
                         sitemap_id=sitemap_id,
                     )
