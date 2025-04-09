@@ -11,7 +11,8 @@ from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
+from database.database import (URL, Author, Comment, MediumArticle, Sitemap,
+                               get_session)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -254,7 +255,8 @@ def get_or_create_author(
     Returns:
         Author: The author object.
     """
-    assert username or medium_url, "Either username or medium_url must be provided"
+    if not username and not medium_url:
+        return None
 
     author = (
         session.query(Author)
@@ -271,7 +273,9 @@ def get_or_create_author(
             username_match = re.search(r"^https://([^/]+)\.medium\.com", medium_url)
             if username_match is not None:
                 username = username_match.group(1)
-        author = Author(username=username, medium_url=medium_url or f"https://medium.com/{username}")
+        author = Author(
+            username=username, medium_url=medium_url or f"https://medium.com/{username}"
+        )
         session.add(author)
         session.commit()
         logger.debug(f"Created new author: {author.username} ({author.medium_url})")
@@ -453,13 +457,16 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         session.commit()
 
         recommendation_urls = extract_recommendation_urls(page)
+        recommendation_urls = set(recommendation_urls)
         max_id = session.query(func.max(URL.id)).scalar()
         count = 0
         for url in recommendation_urls:
             if not session.query(URL).filter(URL.url == url).first():
                 new_url_id = max_id + count + 1
                 count += 1
-                new_url = URL(id=new_url_id, url=url, found_on_url_id=url_id, priority=1.1)
+                new_url = URL(
+                    id=new_url_id, url=url, found_on_url_id=url_id, priority=1.1
+                )
                 session.add(new_url)
                 logger.debug(f"New URL added: {url}")
             else:
@@ -473,7 +480,7 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
 
     except Exception as e:
         session.rollback()
-        logger.error(f"Failed to persist article data: {e}")
+        logger.error(f"Failed to persist article data: {e}", exc_info=True)
         return False
 
 
