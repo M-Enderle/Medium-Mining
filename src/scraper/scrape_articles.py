@@ -297,7 +297,8 @@ def main(
         for thread in threads:
             thread.join(timeout=5)
         display_final_metrics()
+        session.close()
 
 
 if __name__ == "__main__":
-    main(headless=True, workers=5, url_count=10000)
+    main(headless=True, workers=10, url_count=10000)
