@@ -1,5 +1,6 @@
 from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
                         Sequence, String, Text, create_engine)
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
 
@@ -21,7 +22,9 @@ class Sitemap(Base):
         primary_key=True,
     )
     sitemap_url = Column(String(255), unique=True, nullable=False)
-    articles_count = Column(Integer)
+    articles_count = Column(Integer, nullable=True)
+
+    urls = relationship("URL", back_populates="sitemap")
 
 
 class URL(Base):
@@ -41,9 +44,31 @@ class URL(Base):
     change_freq = Column(String(50))
     priority = Column(Float)
     sitemap_id = Column(Integer, ForeignKey("sitemaps.id"), nullable=True)
-    last_crawled = Column(DateTime, nullable=True)  # Already used in code
-    crawl_status = Column(String(50), nullable=True)  # Already used in code
+    last_crawled = Column(DateTime, nullable=True)
+    crawl_status = Column(String(50), nullable=True)
+    crawl_failure_reason = Column(String(255), nullable=True)
     found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
+
+    found_on_url = relationship("URL", remote_side=[id], backref="found_urls")
+    sitemap = relationship("Sitemap", back_populates="urls")
+    articles = relationship("MediumArticle", back_populates="url")
+
+
+class Author(Base):
+    __tablename__ = "authors"
+    author_id_seq = Sequence("author_id_seq")
+
+    id = Column(
+        "id",
+        Integer,
+        author_id_seq,
+        server_default=author_id_seq.next_value(),
+        primary_key=True,
+    )
+    username = Column(String(100), nullable=True, unique=True)
+    medium_url = Column(String(255), nullable=True, unique=True)
+    articles = relationship("MediumArticle", back_populates="author")
+    comments = relationship("Comment", back_populates="author")
 
 
 class MediumArticle(Base):
@@ -59,16 +84,23 @@ class MediumArticle(Base):
     )
     url_id = Column(Integer, ForeignKey("urls.id"))
     title = Column(String(255), nullable=False)
-    author_name = Column(String(100))  # Changed from author_id to author_name
-    date_published = Column(String(50))
-    date_modified = Column(String(50))
-    description = Column(Text)
-    publisher = Column(String(100))
-    is_free = Column(String(50))
-    claps = Column(String(20))
-    comments_count = Column(Integer)
-    tags = Column(String(255))
-    full_article_text = Column(Text)
+    author_id = Column(Integer, ForeignKey("authors.id"), nullable=False)
+    date_published = Column(DateTime, nullable=True)
+    date_modified = Column(DateTime, nullable=True)
+    date_created = Column(DateTime, nullable=True)
+    description = Column(Text, nullable=True)
+    publisher_type = Column(String(100), nullable=True)
+    is_free = Column(Boolean, nullable=True)
+    claps = Column(Integer, nullable=True)
+    comments_count = Column(Integer, nullable=True)
+    full_article_text = Column(Text, nullable=True)
+    read_time = Column(Integer, nullable=True)
+    type = Column(String(50), nullable=True)
+
+    tags = Column(ARRAY(String), nullable=True)
+    author = relationship("Author", back_populates="articles")
+    comments = relationship("Comment", back_populates="article")
+    url = relationship("URL", back_populates="articles")
 
 
 class Comment(Base):
@@ -83,11 +115,13 @@ class Comment(Base):
         primary_key=True,
     )
     article_id = Column(Integer, ForeignKey("medium_articles.id"))
-    username = Column(String(100))
-    text = Column(Text)
-    full_text = Column(Text)
-    claps = Column(String(20))
-    references_article = Column(Boolean)
+    author_id = Column(Integer, ForeignKey("authors.id"), nullable=True)
+    text = Column(Text, nullable=True)
+    full_text = Column(Text, nullable=False)
+    claps = Column(Integer, nullable=True)
+    references_article = Column(Boolean, nullable=False)
+    author = relationship("Author", back_populates="comments")
+    article = relationship("MediumArticle", back_populates="comments")
 
 
 def get_session():
