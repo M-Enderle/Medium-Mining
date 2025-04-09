@@ -8,7 +8,7 @@ from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
 
 from playwright.sync_api import Page
-from sqlalchemy import func, or_, and_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
