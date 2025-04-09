@@ -5,6 +5,7 @@ from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any, Optional
 
+import sentry_sdk
 from playwright.sync_api import Browser, BrowserContext, sync_playwright
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,11 @@ from scraper.medium_helpers import (
     setup_signal_handlers,
     update_url_status,
     verify_its_an_article,
+)
+
+sentry_sdk.init(
+    dsn="https://aa404f7f4bacc96130a67102620177c6@o4509122866184192.ingest.de.sentry.io/4509122882240592",
+    send_default_pii=True,
 )
 
 # Configure logging
