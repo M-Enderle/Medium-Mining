@@ -3,6 +3,8 @@
 *.ipynb
 screenshots
 CLAUDE.md
+.duckdb
+*.wal
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -178,4 +180,4 @@ cython_debug/
 .ipynb
 screenshots
 *.duckdb
-*.wal
+*.walmedium_articles_full.duckdb
