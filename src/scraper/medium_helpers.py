@@ -8,7 +8,7 @@ from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
 
 from playwright.sync_api import Page
-from sqlalchemy import func, or_, and_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
@@ -269,7 +269,9 @@ def get_or_create_author(
     if not author:
         if not username:
             username = re.search(r"^https://([^/]+)\.medium\.com", medium_url).group(1)
-        author = Author(username=username, medium_url=medium_url or f"https://medium.com/{username}")
+        author = Author(
+            username=username, medium_url=medium_url or f"https://medium.com/{username}"
+        )
         session.add(author)
         session.commit()
         logger.debug(f"Created new author: {author.username} ({author.medium_url})")
