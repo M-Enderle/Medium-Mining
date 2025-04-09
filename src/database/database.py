@@ -1,5 +1,18 @@
-from sqlalchemy import (Boolean, Column, DateTime, Float, ForeignKey, Integer,
-                        Sequence, String, Text, create_engine, Date, SmallInteger, Numeric)
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Sequence,
+    String,
+    Text,
+    create_engine,
+    Date,
+    SmallInteger,
+    Numeric,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
