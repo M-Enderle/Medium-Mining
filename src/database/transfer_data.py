@@ -3,15 +3,8 @@ from time import time
 
 from tqdm import tqdm
 
-from database import (
-    URL,
-    Base,
-    SessionLocal,
-    Sitemap,
-    create_engine,
-    sessionmaker,
-    setup_database,
-)
+from database import (URL, Base, SessionLocal, Sitemap, create_engine,
+                      sessionmaker, setup_database)
 
 # Database file path
 DATABASE_PATH = "medium_articles.db"  # Replace with your desired database file
