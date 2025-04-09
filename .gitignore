@@ -181,3 +181,4 @@ cython_debug/
 screenshots
 *.duckdb
 *.walmedium_articles_full.duckdb
+.python-version
