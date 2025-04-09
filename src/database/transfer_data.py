@@ -138,8 +138,7 @@ def transfer_data():
                         id=url_id,
                         url=url_value,
                         last_modified=last_modified,
-                        change_freq=update_freq_mapping.get(
-                            change_freq, None),
+                        change_freq=update_freq_mapping.get(change_freq, None),
                         priority=priority,
                         sitemap_id=sitemap_id,
                     )
