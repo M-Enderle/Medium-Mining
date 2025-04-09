@@ -295,4 +295,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main(headless=False, workers=2, url_count=100)
+    main(headless=True, workers=5, url_count=10000)
