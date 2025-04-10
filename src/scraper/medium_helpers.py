@@ -448,7 +448,9 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         if not author:
             logger.warning("No author found for the article.")
 
-        article = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        article = (
+            session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        )
         if article:
             article.full_article_text = extract_text(page)
             article.claps = get_claps(page) or 0
