@@ -5,6 +5,7 @@ screenshots
 CLAUDE.md
 .duckdb
 *.wal
+login_state.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
