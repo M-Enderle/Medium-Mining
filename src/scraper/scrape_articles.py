@@ -1,7 +1,9 @@
+import argparse
 import logging
 import os
 import random
 import time
+from datetime import datetime
 from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any, Optional
@@ -10,7 +12,8 @@ import sentry_sdk
 from playwright.sync_api import Browser, BrowserContext, sync_playwright
 from sqlalchemy.orm import Session
 
-from database.database import SessionLocal
+import wandb
+from database.database import URL, MediumArticle, SessionLocal
 from scraper.medium_helpers import (fetch_random_urls, persist_article_data,
                                     setup_signal_handlers, update_url_status,
                                     verify_its_an_article)
@@ -45,25 +48,68 @@ def update_metrics() -> None:
         completed_tasks += 1
 
 
-def display_final_metrics() -> None:
+def get_current_metrics() -> dict:
     """
-    Display the final metrics after processing.
+    Get the current metrics for logging.
+    Returns:
+        dict: Dictionary of current metrics
     """
     global completed_tasks, start_time
-    elapsed_time = time.time() - start_time
+    with metrics_lock:
+        elapsed_time = time.time() - start_time
+        articles_processed = completed_tasks
 
     if elapsed_time > 0:
-        speed = completed_tasks / (elapsed_time / 60)
+        speed = articles_processed / (elapsed_time / 60)
+        processing_time_per_article = 60 / speed if speed > 0 else 0
     else:
         speed = 0
+        processing_time_per_article = 0
 
-    logger.info("=== FINAL PERFORMANCE SUMMARY ===")
-    logger.info(f"Total processed: {completed_tasks} articles")
-    logger.info(f"Average speed: {speed:.2f} articles/minute")
-    logger.info(f"Total time: {elapsed_time/60:.1f} minutes")
+    # Fetch additional metrics from the database
+    with SessionLocal() as session:
+        total_articles = session.query(MediumArticle).count()
+        free_articles = (
+            session.query(MediumArticle).filter(MediumArticle.is_free == True).count()
+        )
+        premium_articles = (
+            session.query(MediumArticle).filter(MediumArticle.is_free == False).count()
+        )
+        free_ratio = free_articles / total_articles if total_articles > 0 else 0
+        premium_ratio = premium_articles / total_articles if total_articles > 0 else 0
 
-    if speed > 0:
-        logger.info(f"Processing time per article: {60/speed:.2f} seconds")
+    return {
+        "articles_processed": articles_processed,
+        "elapsed_minutes": elapsed_time / 60,
+        "articles_per_minute": speed,
+        "seconds_per_article": processing_time_per_article,
+        "total_articles": total_articles,
+        "free_articles": free_articles,
+        "premium_articles": premium_articles,
+        "free_ratio": free_ratio,
+        "premium_ratio": premium_ratio,
+    }
+
+
+def wandb_logging_thread(shutdown: Event) -> None:
+    """
+    Thread to log metrics to wandb periodically.
+    Args:
+        shutdown (Event): Event to signal thread to stop
+    """
+    while not shutdown.is_set():
+        try:
+            metrics = get_current_metrics()
+            wandb.log(metrics)
+            logger.debug(f"Logged metrics to wandb: {metrics}")
+        except Exception as e:
+            logger.error(f"Error logging to wandb: {e}")
+
+        # Sleep for 10 seconds or until shutdown is set
+        for _ in range(10):
+            if shutdown.is_set():
+                break
+            time.sleep(1)
 
 
 def create_browser(playwright, headless: bool) -> Browser:
@@ -272,6 +318,7 @@ def main(
     start_time = time.time()
     task_queue = Queue()
     threads = []
+    wandb_thread = None
 
     try:
         # Initialize database session factory
@@ -282,6 +329,14 @@ def main(
             url_data = fetch_random_urls(session, url_count, with_login)
 
         logger.info(f"Starting to process {len(url_data)} URLs with {workers} workers")
+
+        # Start wandb logging thread
+        wandb_thread = Thread(
+            target=wandb_logging_thread,
+            args=(shutdown_event,),
+            daemon=True,
+        )
+        wandb_thread.start()
 
         # Start worker threads
         for _ in range(workers):
@@ -324,9 +379,45 @@ def main(
         # Cleanup threads
         for thread in threads:
             thread.join(timeout=5)
-        display_final_metrics()
+        if wandb_thread:
+            wandb_thread.join(timeout=5)
+
+        wandb.log(get_current_metrics())
         session.close()
 
 
 if __name__ == "__main__":
-    main(headless=True, workers=3, url_count=1000000, with_login=True)
+    parser = argparse.ArgumentParser(description="Scrape articles from Medium.")
+    parser.add_argument(
+        "--headless", action="store_true", help="Run browser in headless mode"
+    )
+    parser.add_argument(
+        "--workers", type=int, default=5, help="Number of worker threads"
+    )
+    parser.add_argument(
+        "--url_count", type=int, default=100, help="Number of URLs to process"
+    )
+    parser.add_argument(
+        "--with_login",
+        action="store_true",
+        help="Login to Medium. Requires a login_state.json.",
+    )
+
+    args = parser.parse_args()
+
+    # Initialize wandb in offline mode or with explicit finish
+    wandb.init(
+        project="medium-scraper",
+        entity="JKU_",
+        name=str(datetime.now().isoformat()),
+        config=vars(args),
+    )
+    try:
+        main(
+            headless=args.headless,
+            workers=args.workers,
+            url_count=args.url_count,
+            with_login=args.with_login,
+        )
+    finally:
+        wandb.finish()
