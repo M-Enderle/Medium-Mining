@@ -178,6 +178,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .ipynb
+!src/analyze/datascience.ipynb
 screenshots
 *.duckdb
 *.walmedium_articles_full.duckdb
