@@ -49,10 +49,11 @@ class URL(Base):
     crawl_status = Column(String(12), nullable=True)
     crawl_failure_reason = Column(String(255), nullable=True)
     found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
+    with_login = Column(Boolean, nullable=True, default=False)
 
     found_on_url = relationship("URL", remote_side=[id], backref="found_urls")
     sitemap = relationship("Sitemap", back_populates="urls")
-    articles = relationship("MediumArticle", back_populates="url")
+    article = relationship("MediumArticle", back_populates="url")
 
 
 class Author(Base):
@@ -101,7 +102,7 @@ class MediumArticle(Base):
     tags = Column(ARRAY(String), nullable=True)
     author = relationship("Author", back_populates="articles")
     comments = relationship("Comment", back_populates="article")
-    url = relationship("URL", back_populates="articles")
+    url = relationship("URL", back_populates="article")
 
 
 class Comment(Base):

@@ -18,7 +18,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def fetch_random_urls(session: Session, count: int) -> List[Tuple[int, str]]:
+def fetch_random_urls(
+    session: Session, count: int, with_login: bool
+) -> List[Tuple[int, str]]:
     """
     Fetch random URLs from the database that match the specified criteria.
 
@@ -29,24 +31,41 @@ def fetch_random_urls(session: Session, count: int) -> List[Tuple[int, str]]:
     Args:
         session (Session): SQLAlchemy session object.
         count (int): Number of URLs to fetch.
+        with_login (bool): Only include premium URLs that have not been crawled yet with login.
     Returns:
         List[Tuple[int, str]]: List of tuples containing URL ID and URL.
     """
 
-    query = (
-        session.query(URL.id, URL.url)
-        .join(URL.sitemap)
-        .filter(
-            or_(
-                Sitemap.sitemap_url.like("%/posts/%"),
+    if not with_login:
+        query = (
+            session.query(URL.id, URL.url)
+            .join(URL.sitemap)
+            .filter(
+                or_(
+                    Sitemap.sitemap_url.like("%/posts/%"),
+                )
             )
+            .filter(
+                URL.last_crawled.is_(None),
+            )
+            .order_by(URL.priority.desc())
+            .limit(count)
         )
-        .filter(
-            URL.last_crawled.is_(None),
+    else:
+        query = (
+            session.query(URL.id, URL.url)
+            .join(URL.sitemap)
+            .join(URL.article)
+            .filter(
+                or_(
+                    Sitemap.sitemap_url.like("%/posts/%"),
+                )
+            )
+            .filter(MediumArticle.is_free.is_(False))
+            .filter(URL.with_login.is_(False))
+            .order_by(URL.priority.desc())
+            .limit(count)
         )
-        .order_by(URL.priority.desc())
-        .limit(count)
-    )
 
     logger.debug(f"Fetching {count} random URLs from database")
 
@@ -54,7 +73,11 @@ def fetch_random_urls(session: Session, count: int) -> List[Tuple[int, str]]:
 
 
 def update_url_status(
-    session: Session, url_id: int, success: bool, error: Optional[str] = None
+    session: Session,
+    url_id: int,
+    success: str,
+    error: Optional[str] = None,
+    with_login: bool = False,
 ) -> None:
     """
     Update the URL status in the database.
@@ -63,17 +86,21 @@ def update_url_status(
         url_id (int): ID of the URL to update.
         success (bool): Whether the crawl was successful or not.
         error (Optional[str]): Optional error message if the crawl failed.
+        with_login (bool): Whether the URL was processed with login.
     """
 
     try:
         url = session.query(URL).filter(URL.id == url_id).first()
         if url:
             url.last_crawled = datetime.now()
-            url.crawl_status = "Successful" if success else "Failed"
+            url.crawl_status = success
             if error:
                 url.crawl_failure_reason = error
+            url.with_login = with_login
             session.commit()
-            logger.debug(f"Updated URL {url_id} status: {success}")
+            logger.debug(
+                f"Updated URL {url_id} status: {success}, with_login: {with_login}"
+            )
     except Exception as e:
         session.rollback()
         logger.error(f"DB error for URL {url_id}: {e}")
@@ -394,6 +421,11 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
 
 def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
     try:
+
+        session.query(MediumArticle).filter(MediumArticle.url_id == url_id).delete()
+        session.query(Comment).filter(Comment.article_id == url_id).delete()
+        session.commit()
+
         close_overlay(page)
 
         metadata = extract_metadata(page)
@@ -403,8 +435,8 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         comments_count = None
         if click_see_all_responses(page):
             scroll_to_load_comments(page)
-            comments = extract_comments(page)
-            comments_count = len(comments)
+        comments = extract_comments(page)
+        comments_count = len(comments)
 
         author = get_or_create_author(
             session,
@@ -514,47 +546,6 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
 
 if __name__ == "__main__":
-    from playwright.sync_api import sync_playwright
-
-    with sync_playwright() as p:
-        session = get_session()
-        # mobile
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context(
-            viewport={"width": 375, "height": 812},
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1",
-        )
-        page = context.new_page()
-        page.goto("https://medium.com/comsystoreply/angular-elements-569025b65c69")
-        page.wait_for_load_state("domcontentloaded")
-        page.wait_for_timeout(1000)
-
-        assert verify_its_an_article(page) is True
-
-        # test functions
-        assert extract_text(page)
-        assert len(extract_tags(page)) > 0
-        assert len(extract_recommendation_urls(page)) == 6
-        assert get_read_time(page) is not None
-
-        metadata = extract_metadata(page)
-        assert len(metadata.keys()) > 0
-        assert "title" in metadata
-
-        author = metadata.get("username")
-        assert author is not None
-
-        # test persist_article_data
-        assert persist_article_data(session, 1, page) is True
-
-        # negtive example for verify_its_an_article
-        page.goto("https://medium.com/@kevinchisholm")
-        page.wait_for_load_state("domcontentloaded")
-        page.wait_for_timeout(1000)
-        assert verify_its_an_article(page) is False
-
-        # close
-        page.close()
-        browser.close()
-
-    session.close()
+    session = get_session()
+    urls = fetch_random_urls(session, 10, True)
+    print(urls)
