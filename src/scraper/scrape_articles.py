@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import time
 from queue import Queue
@@ -17,7 +18,6 @@ from scraper.medium_helpers import (fetch_random_urls, persist_article_data,
 sentry_sdk.init(
     dsn="https://aa404f7f4bacc96130a67102620177c6@o4509122866184192.ingest.de.sentry.io/4509122882240592",
     send_default_pii=True,
-    debug=True,
     traces_sample_rate=1.0,
 )
 
@@ -81,34 +81,35 @@ def create_browser(playwright, headless: bool) -> Browser:
     )
 
 
-def get_context(browser: Browser) -> BrowserContext:
+def get_context(browser: Browser, with_login: bool) -> BrowserContext:
     """
     Randomize the user agent for the browser context.
     Args:
         browser (Browser): The Playwright browser instance.
+        with_login (bool): Whether to login to Medium.
     Returns:
         BrowserContext: The browser context with a randomized user agent.
     """
-    context = browser.new_context(
-        viewport=random.choice(
+    context_options = {
+        "viewport": random.choice(
             [
-                {"width": 390, "height": 844},  # iPhone 12 dimensions
-                {"width": 375, "height": 667},  # iPhone SE dimensions
-                {"width": 414, "height": 896},  # iPhone 11 Pro Max dimensions
-                {"width": 360, "height": 640},  # Samsung Galaxy S8 dimensions
-                {"width": 412, "height": 915},  # Google Pixel 5 dimensions
+                {"width": 390, "height": 844},
+                {"width": 375, "height": 667},
+                {"width": 414, "height": 896},
+                {"width": 360, "height": 640},
+                {"width": 412, "height": 915},
             ]
         ),
-        user_agent=random.choice(
+        "user_agent": random.choice(
             [
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",  # iPhone 12
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",  # iPhone SE
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",  # iPhone 11 Pro Max
-                "Mozilla/5.0 (Linux; Android 8.0.0; SM-G950F Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.111 Mobile Safari/537.36",  # Samsung Galaxy S8
-                "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36",  # Google Pixel 5
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (Linux; Android 8.0.0; SM-G950F Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.111 Mobile Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36",
             ]
         ),
-        locale=random.choice(
+        "locale": random.choice(
             [
                 "en-US",
                 "en-GB",
@@ -121,8 +122,13 @@ def get_context(browser: Browser) -> BrowserContext:
                 "zh-CN",
             ]
         ),
-        device_scale_factor=random.choice([1, 2]),
-    )
+        "device_scale_factor": random.choice([1, 2]),
+    }
+
+    if with_login:
+        context_options["storage_state"] = "login_state.json"
+
+    context = browser.new_context(**context_options)
 
     # Mask automation
     context.add_init_script(
@@ -147,7 +153,11 @@ def random_mouse_movement(page: Any) -> None:
 
 
 def process_article(
-    url_data: tuple[int, str], browser: Browser, worker_idx: int, session: Session
+    url_data: tuple[int, str],
+    browser: Browser,
+    worker_idx: int,
+    session: Session,
+    with_login: bool,
 ) -> None:
     """
     Process a single article URL.
@@ -156,6 +166,7 @@ def process_article(
         browser (Browser): The Playwright browser instance.
         worker_idx (int): Index of the worker thread.
         session (Session): SQLAlchemy session for database operations.
+        with_login (bool): Whether to login to Medium.
     """
 
     # stopping gracefully
@@ -165,7 +176,7 @@ def process_article(
     url_id, url = url_data
 
     try:
-        context = get_context(browser)
+        context = get_context(browser, with_login)
 
         with context.new_page() as page:
             logger.debug(f"Processing URL: {url}")
@@ -176,19 +187,19 @@ def process_article(
 
             if not verify_its_an_article(page):
                 logger.info(f"URL is not an article: {url}")
-                update_url_status(session, url_id, "not_article")
+                update_url_status(session, url_id, "not_article", with_login=with_login)
                 return
 
             persist_article_data(session, url_id, page)
 
-            update_url_status(session, url_id, "success")
+            update_url_status(session, url_id, "success", with_login=with_login)
             logger.info(f"Processed URL: {url}")
 
             update_metrics()
 
     except Exception as e:
         logger.error(f"Error processing URL {url}: {e}")
-        update_url_status(session, url_id, "error", str(e))
+        update_url_status(session, url_id, "error", str(e), with_login=with_login)
 
 
 def worker_thread(
@@ -196,6 +207,7 @@ def worker_thread(
     browser_factory: callable,
     session_factory: callable,
     shutdown: Event,
+    with_login: bool = False,
 ) -> None:
     """
     Worker thread to process tasks from the queue.
@@ -204,6 +216,7 @@ def worker_thread(
         browser_factory (callable): Function to create a browser instance.
         session_factory (callable): Function to create a session instance.
         shutdown (Event): Event to signal graceful shutdown.
+        with_login (bool): Whether to login to Medium.
     """
     while not shutdown.is_set():
         try:
@@ -217,7 +230,9 @@ def worker_thread(
                 browser = browser_factory(p)
                 try:
                     with session_factory() as session:
-                        process_article(url_data, browser, worker_idx, session)
+                        process_article(
+                            url_data, browser, worker_idx, session, with_login
+                        )
                 finally:
                     try:
                         browser.close()
@@ -232,7 +247,10 @@ def worker_thread(
 
 
 def main(
-    headless: bool = True, workers: int = 5, url_count: Optional[int] = None
+    headless: bool = True,
+    workers: int = 5,
+    url_count: Optional[int] = None,
+    with_login: bool = False,
 ) -> None:
     """Main execution function for processing URLs with worker threads.
 
@@ -240,8 +258,13 @@ def main(
         headless: Whether to run browser in headless mode
         workers: Number of worker threads
         url_count: Optional number of URLs to process
+        with_login: Whether to login to Medium. Requires a login_state.json. Turning this on will scrape ONLY premium articles.
     """
     global start_time, shutdown_event
+
+    assert not with_login or os.path.exists(
+        "login_state.json"
+    ), "Login state file not found. Please create a login_state.json file."
 
     # Set up signal handlers for graceful shutdown
     setup_signal_handlers(shutdown_event)
@@ -256,7 +279,7 @@ def main(
 
         # Fetch URLs with proper session management
         with session_factory() as session:
-            url_data = fetch_random_urls(session, url_count)
+            url_data = fetch_random_urls(session, url_count, with_login)
 
         logger.info(f"Starting to process {len(url_data)} URLs with {workers} workers")
 
@@ -269,6 +292,7 @@ def main(
                     lambda p: create_browser(p, headless),
                     session_factory,
                     shutdown_event,  # Pass the shutdown event to workers
+                    with_login,
                 ),
                 daemon=True,
             )
@@ -305,4 +329,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main(headless=True, workers=10, url_count=10000)
+    main(headless=True, workers=3, url_count=1000000, with_login=True)
