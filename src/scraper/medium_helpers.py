@@ -422,7 +422,6 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
 def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
     try:
 
-        session.query(MediumArticle).filter(MediumArticle.url_id == url_id).delete()
         session.query(Comment).filter(Comment.article_id == url_id).delete()
         session.commit()
 
@@ -449,23 +448,29 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         if not author:
             logger.warning("No author found for the article.")
 
-        article = MediumArticle(
-            url_id=url_id,
-            title=metadata.get("title"),
-            author_id=author.id if author else None,
-            date_created=metadata.get("date_created"),
-            date_modified=metadata.get("date_modified"),
-            date_published=metadata.get("date_published"),
-            description=metadata.get("description"),
-            publisher_type=metadata.get("publisher_type"),
-            is_free=not is_paid_article(page),
-            claps=get_claps(page) or 0,
-            comments_count=comments_count or 0,
-            full_article_text=extract_text(page),
-            read_time=get_read_time(page),
-            type=metadata.get("type"),
-            tags=tags,
-        )
+        article = session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
+        if article:
+            article.full_article_text = extract_text(page)
+            article.claps = get_claps(page) or 0
+            article.comments_count = comments_count or 0
+        else:
+            article = MediumArticle(
+                url_id=url_id,
+                title=metadata.get("title"),
+                author_id=author.id if author else None,
+                date_created=metadata.get("date_created"),
+                date_modified=metadata.get("date_modified"),
+                date_published=metadata.get("date_published"),
+                description=metadata.get("description"),
+                publisher_type=metadata.get("publisher_type"),
+                is_free=not is_paid_article(page),
+                claps=get_claps(page) or 0,
+                comments_count=comments_count or 0,
+                full_article_text=extract_text(page),
+                read_time=get_read_time(page),
+                type=metadata.get("type"),
+                tags=tags,
+            )
 
         session.add(article)
         session.commit()
