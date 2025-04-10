@@ -6,6 +6,8 @@ CLAUDE.md
 .duckdb
 *.wal
 login_state.json
+.DS_Store
+*/.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -183,3 +185,4 @@ screenshots
 *.duckdb
 *.walmedium_articles_full.duckdb
 .python-version
+.DS_Store
