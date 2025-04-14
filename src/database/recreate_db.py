@@ -1,7 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from database import (  # replace this with the actual module name
-    Base, Sitemap, URL, Author, MediumArticle, Comment
+
+from database import Author  # replace this with the actual module name
+from database import (
+    URL,
+    Base,
+    Comment,
+    MediumArticle,
+    Sitemap,
 )
 
 # Define paths
@@ -18,13 +24,11 @@ NewSession = sessionmaker(bind=new_engine)
 # Create all tables in the new DB
 Base.metadata.create_all(new_engine)
 
+
 # Helper to remove internal SQLAlchemy state
 def safe_model_copy(instance, cls):
-    return cls(**{
-        k: v
-        for k, v in vars(instance).items()
-        if not k.startswith("_")
-    })
+    return cls(**{k: v for k, v in vars(instance).items() if not k.startswith("_")})
+
 
 def transfer_data():
     old_session = OldSession()
@@ -50,18 +54,17 @@ def transfer_data():
         new_session.commit()
 
         # Transfer Articles (filtering missing title or author)
-        articles = old_session.query(MediumArticle).filter(
-            MediumArticle.title != None,
-            MediumArticle.author_id != None
-        ).all()
+        articles = (
+            old_session.query(MediumArticle)
+            .filter(MediumArticle.title != None, MediumArticle.author_id != None)
+            .all()
+        )
         for a in articles:
             new_session.add(safe_model_copy(a, MediumArticle))
         new_session.commit()
 
         # Transfer Comments (only if full_text is present)
-        comments = old_session.query(Comment).filter(
-            Comment.full_text != None
-        ).all()
+        comments = old_session.query(Comment).filter(Comment.full_text != None).all()
         for c in comments:
             new_session.add(safe_model_copy(c, Comment))
         new_session.commit()
@@ -73,6 +76,7 @@ def transfer_data():
     finally:
         old_session.close()
         new_session.close()
+
 
 if __name__ == "__main__":
     transfer_data()
