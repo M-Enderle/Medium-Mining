@@ -14,9 +14,13 @@ from sqlalchemy.orm import Session
 
 import wandb
 from database.database import URL, MediumArticle, SessionLocal
-from scraper.medium_helpers import (fetch_random_urls, persist_article_data,
-                                    setup_signal_handlers, update_url_status,
-                                    verify_its_an_article)
+from scraper.medium_helpers import (
+    fetch_random_urls,
+    persist_article_data,
+    setup_signal_handlers,
+    update_url_status,
+    verify_its_an_article,
+)
 
 sentry_sdk.init(
     dsn="https://aa404f7f4bacc96130a67102620177c6@o4509122866184192.ingest.de.sentry.io/4509122882240592",
