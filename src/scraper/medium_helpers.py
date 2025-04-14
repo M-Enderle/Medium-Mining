@@ -11,8 +11,7 @@ from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from database.database import (URL, Author, Comment, MediumArticle, Sitemap,
-                               get_session)
+from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -484,6 +483,7 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
                     comment.get("username"),
                 )
                 comment_obj = Comment(
+                    id=session.query(func.max(Comment.id)).scalar() + 1,
                     article_id=article.id,
                     author_id=author.id if author else None,
                     text=comment.get("text"),
@@ -492,28 +492,23 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
                     references_article=comment.get("references_article"),
                 )
                 session.add(comment_obj)
-
-        session.commit()
+                session.commit()
 
         recommendation_urls = extract_recommendation_urls(page)
-        recommendation_urls = set(recommendation_urls)
-        max_id = session.query(func.max(URL.id)).scalar()
-        count = 0
         for url in recommendation_urls:
             if not session.query(URL).filter(URL.url == url).first():
-                new_url_id = max_id + count + 1
-                count += 1
                 new_url = URL(
-                    id=new_url_id, url=url, found_on_url_id=url_id, priority=1.1
+                    id=session.query(func.max(URL.id)).scalar() + 1,
+                    url=url,
+                    found_on_url_id=url_id,
+                    priority=1.1,
                 )
                 session.add(new_url)
-                logger.debug(f"New URL added: {url}")
+                session.commit()
             else:
                 session.query(URL).filter(URL.url == url).update(
                     {"priority": URL.priority + 0.1}
                 )
-
-        session.commit()
 
         return True
 
