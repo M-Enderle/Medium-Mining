@@ -39,6 +39,39 @@ poetry run python -m database.database
 poetry run playwright install
 ```
 
+## Usage
+
+### Scraping Sitemaps
+
+To scrape Medium sitemaps and collect article URLs, run the following command:
+
+```bash
+poetry run python src/scraper/scrape_sitemaps.py
+```
+
+### Scraping Articles
+
+To scrape detailed content and metadata from Medium articles, run the following command:
+
+```bash
+poetry run python src/scraper/scrape_articles.py --url_count <number_of_urls> --workers <number_of_workers> --headless --with_login
+```
+
+- `--url_count`: Number of URLs to process (default: 100)
+- `--workers`: Number of worker threads (default: 5)
+- `--headless`: Run browser in headless mode
+- `--with_login`: Login to Medium. Requires a `login_state.json`.
+
+### Logging Metrics with wandb
+
+The `src/scraper/scrape_articles.py` script uses `wandb` for logging metrics. To enable logging, ensure you have a `wandb` account and initialize it with your project details.
+
+```python
+import wandb
+
+wandb.init(project="medium-scraper", entity="your_entity")
+```
+
 ## Database Schema
 
 The project uses SQLAlchemy with the following main models:
@@ -56,3 +89,26 @@ The project uses SQLAlchemy with the following main models:
 ## License
 
 MIT
+
+## Scraper Directory
+
+The `src/scraper` directory contains scripts for scraping Medium articles and sitemaps:
+
+- `scrape_articles.py`: Extracts detailed content and metadata from Medium articles.
+- `scrape_sitemaps.py`: Crawls Medium sitemaps to collect article URLs.
+
+## Use of wandb
+
+The `src/scraper/scrape_articles.py` script uses `wandb` for logging metrics.
+
+## Database Directory
+
+The `src/database` directory contains scripts for managing the database:
+
+- `database.py`: Defines the database schema and provides functions for database operations.
+- `recreate_db.py`: Recreates the database from an existing database file.
+- `transfer_data.py`: Transfers data from an SQLite database to a DuckDB database.
+
+## pyproject.toml
+
+The `pyproject.toml` file includes the project dependencies and configuration for Poetry.
