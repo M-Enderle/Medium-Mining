@@ -300,6 +300,7 @@ def get_or_create_author(
             if username_match is not None:
                 username = username_match.group(1)
         author = Author(
+            id=session.query(func.max(Author.id)).scalar() + 1,
             username=username, medium_url=medium_url or f"https://medium.com/{username}"
         )
         session.add(author)
@@ -418,12 +419,8 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
     return article_data
 
 
-def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
+def persist_article_data(session: Session, url_id: int, page: Page, with_login: bool) -> bool:
     try:
-
-        session.query(Comment).filter(Comment.article_id == url_id).delete()
-        session.commit()
-
         close_overlay(page)
 
         metadata = extract_metadata(page)
@@ -476,23 +473,39 @@ def persist_article_data(session: Session, url_id: int, page: Page) -> bool:
         session.add(article)
         session.commit()
 
+        if with_login:
+            return True
+
         if comments_count is not None:
             for comment in comments:
                 author = get_or_create_author(
                     session,
                     comment.get("username"),
                 )
-                comment_obj = Comment(
-                    id=session.query(func.max(Comment.id)).scalar() + 1,
-                    article_id=article.id,
-                    author_id=author.id if author else None,
-                    text=comment.get("text"),
-                    full_text=comment.get("full_html_text"),
-                    claps=comment.get("claps"),
-                    references_article=comment.get("references_article"),
-                )
-                session.add(comment_obj)
-                session.commit()
+                if (
+                    session.query(Comment)
+                    .filter(Comment.article_id == article.id)
+                    .filter(Comment.author_id == author.id if author else None)
+                    .first()
+                ):
+                    continue
+
+                try:
+                    comment_obj = Comment(
+                        id=session.query(func.max(Comment.id)).scalar() + 1,
+                        article_id=article.id,
+                        author_id=author.id if author else None,
+                        text=comment.get("text"),
+                        full_text=comment.get("full_html_text"),
+                        claps=comment.get("claps"),
+                        references_article=comment.get("references_article"),
+                    )
+                    session.add(comment_obj)
+                    session.commit()
+                except Exception as e:
+                    session.rollback()
+                    logger.error(f"Failed to persist comment: {e}")
+                    continue
 
         recommendation_urls = extract_recommendation_urls(page)
         for url in recommendation_urls:

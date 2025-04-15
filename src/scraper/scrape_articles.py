@@ -240,7 +240,7 @@ def process_article(
                 update_url_status(session, url_id, "not_article", with_login=with_login)
                 return
 
-            persist_article_data(session, url_id, page)
+            persist_article_data(session, url_id, page, with_login)
 
             update_url_status(session, url_id, "success", with_login=with_login)
             logger.info(f"Processed URL: {url}")
