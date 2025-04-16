@@ -134,6 +134,7 @@ def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
         if button and button.is_visible():
             button.click(timeout=timeout)
             page.wait_for_load_state("load", timeout=timeout)
+            page.wait_for_timeout(2000)
             return True
     except Exception as e:
         logger.debug(f"Failed to click responses button: {e}")
@@ -158,7 +159,7 @@ def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
                 }
             """
             )
-            page.wait_for_timeout(500)
+            page.wait_for_timeout(1000)
             page.wait_for_load_state("load", timeout=5000)
             if page.content() == html:
                 return
@@ -348,7 +349,28 @@ def get_claps(page: Page) -> Optional[int]:
         except ValueError:
             logger.debug("Failed to convert claps text to integer")
             return None
+        
 
+def get_comments_count(page: Page) -> Optional[int]:
+    """
+    Get the number of comments from the article page.
+    Args:
+        page (Page): Playwright Page object.
+    Returns:
+        Optional[int]: Number of comments, or None if not found.
+    """
+    if comments_element := page.query_selector("span.pw-responses-count"):
+        try:
+            comments_text = comments_element.inner_text()
+            if "K" in comments_text:
+                return int(float(comments_text.replace("K", "").strip()) * 1000)
+            elif "M" in comments_text:
+                return int(float(comments_text.replace("M", "").strip()) * 1000000)
+            else:
+                return int(comments_text.replace(",", "").strip())
+        except ValueError:
+            logger.debug("Failed to convert comments text to integer")
+            return None
 
 def is_paid_article(page: Page) -> bool:
     """
@@ -363,8 +385,7 @@ def is_paid_article(page: Page) -> bool:
     except Exception as e:
         logger.debug(f"Error checking paid article: {e}")
         return False
-
-
+    
 def close_overlay(page: Page) -> None:
     """
     Close the overlay if it exists.
@@ -427,11 +448,7 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
 
         assert metadata.get("title"), "JSON metadata is empty"
 
-        comments_count = None
-        if click_see_all_responses(page):
-            scroll_to_load_comments(page)
-        comments = extract_comments(page)
-        comments_count = len(comments)
+        
 
         author = get_or_create_author(
             session,
@@ -450,7 +467,7 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
         if article:
             article.full_article_text = extract_text(page)
             article.claps = get_claps(page) or 0
-            article.comments_count = comments_count or 0
+            article.comments_count = get_comments_count(page) or 0
         else:
             article = MediumArticle(
                 url_id=url_id,
@@ -463,7 +480,7 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
                 publisher_type=metadata.get("publisher_type"),
                 is_free=not is_paid_article(page),
                 claps=get_claps(page) or 0,
-                comments_count=comments_count or 0,
+                comments_count=get_comments_count(page) or 0,
                 full_article_text=extract_text(page),
                 read_time=get_read_time(page),
                 type=metadata.get("type"),
@@ -475,8 +492,12 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
 
         if with_login:
             return True
+        
+        if click_see_all_responses(page):
+            scroll_to_load_comments(page)
+        comments = extract_comments(page)
 
-        if comments_count is not None:
+        if comments:
             for comment in comments:
                 author = get_or_create_author(
                     session,
