@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -40,9 +40,7 @@ def fetch_random_urls(
             session.query(URL.id, URL.url)
             .join(URL.sitemap)
             .filter(
-                or_(
-                    Sitemap.sitemap_url.like("%/posts/%"),
-                )
+                Sitemap.sitemap_url.like("%/posts/%"),
             )
             .filter(
                 URL.last_crawled.is_(None),
@@ -55,11 +53,7 @@ def fetch_random_urls(
             session.query(URL.id, URL.url)
             .join(URL.sitemap)
             .join(URL.article)
-            .filter(
-                or_(
-                    Sitemap.sitemap_url.like("%/posts/%"),
-                )
-            )
+            .filter(Sitemap.sitemap_url.like("%/posts/%"))
             .filter(MediumArticle.is_free.is_(False))
             .filter(URL.with_login.is_(False))
             .order_by(URL.priority.desc())
@@ -302,7 +296,8 @@ def get_or_create_author(
                 username = username_match.group(1)
         author = Author(
             id=session.query(func.max(Author.id)).scalar() + 1,
-            username=username, medium_url=medium_url or f"https://medium.com/{username}"
+            username=username,
+            medium_url=medium_url or f"https://medium.com/{username}",
         )
         session.add(author)
         session.commit()
@@ -349,7 +344,7 @@ def get_claps(page: Page) -> Optional[int]:
         except ValueError:
             logger.debug("Failed to convert claps text to integer")
             return None
-        
+
 
 def get_comments_count(page: Page) -> Optional[int]:
     """
@@ -372,6 +367,7 @@ def get_comments_count(page: Page) -> Optional[int]:
             logger.debug("Failed to convert comments text to integer")
             return None
 
+
 def is_paid_article(page: Page) -> bool:
     """
     Check if the article is a paid article.
@@ -385,7 +381,8 @@ def is_paid_article(page: Page) -> bool:
     except Exception as e:
         logger.debug(f"Error checking paid article: {e}")
         return False
-    
+
+
 def close_overlay(page: Page) -> None:
     """
     Close the overlay if it exists.
@@ -440,15 +437,19 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
     return article_data
 
 
-def persist_article_data(session: Session, url_id: int, page: Page, with_login: bool) -> bool:
+def persist_article_data(
+    session: Session,
+    url_id: int,
+    page: Page,
+    with_login: bool,
+    insert_recc: bool = False,
+) -> bool:
     try:
         close_overlay(page)
 
         metadata = extract_metadata(page)
 
         assert metadata.get("title"), "JSON metadata is empty"
-
-        
 
         author = get_or_create_author(
             session,
@@ -492,7 +493,7 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
 
         if with_login:
             return True
-        
+
         if click_see_all_responses(page):
             scroll_to_load_comments(page)
         comments = extract_comments(page)
@@ -513,7 +514,7 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
 
                 try:
                     comment_obj = Comment(
-                        id=session.query(func.max(Comment.id)).scalar() + 1,
+                        id=(session.query(func.max(Comment.id)).scalar() or 0) + 1,
                         article_id=article.id,
                         author_id=author.id if author else None,
                         text=comment.get("text"),
@@ -523,26 +524,28 @@ def persist_article_data(session: Session, url_id: int, page: Page, with_login: 
                     )
                     session.add(comment_obj)
                     session.commit()
+                    session.flush()
                 except Exception as e:
                     session.rollback()
                     logger.error(f"Failed to persist comment: {e}")
                     continue
 
-        recommendation_urls = extract_recommendation_urls(page)
-        for url in recommendation_urls:
-            if not session.query(URL).filter(URL.url == url).first():
-                new_url = URL(
-                    id=session.query(func.max(URL.id)).scalar() + 1,
-                    url=url,
-                    found_on_url_id=url_id,
-                    priority=1.1,
-                )
-                session.add(new_url)
-                session.commit()
-            else:
-                session.query(URL).filter(URL.url == url).update(
-                    {"priority": URL.priority + 0.1}
-                )
+        if insert_recc:
+            recommendation_urls = extract_recommendation_urls(page)
+            for url in recommendation_urls:
+                if not session.query(URL).filter(URL.url == url).first():
+                    new_url = URL(
+                        id=session.query(func.max(URL.id)).scalar() + 1,
+                        url=url,
+                        found_on_url_id=url_id,
+                        priority=1.1,
+                    )
+                    session.add(new_url)
+                    session.commit()
+                else:
+                    session.query(URL).filter(URL.url == url).update(
+                        {"priority": URL.priority + 0.1}
+                    )
 
         return True
 
@@ -584,4 +587,5 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 if __name__ == "__main__":
     session = get_session()
     urls = fetch_random_urls(session, 10, True)
-    print(urls)
+    print(len(urls))
+    session.close()
