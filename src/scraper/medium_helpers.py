@@ -336,6 +336,7 @@ def get_claps(page: Page) -> Optional[int]:
     Returns:
         Optional[int]: Number of claps, or None if not found.
     """
+    # if claps_element := page.query_selector("div.pw-multi-vote-count button"):
     if claps_element := page.query_selector("div.pw-multi-vote-count p"):
         try:
             claps_text = claps_element.inner_text()
@@ -561,6 +562,26 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
 
 if __name__ == "__main__":
-    session = get_session()
-    urls = fetch_random_urls(session, 10, True)
-    print(urls)
+    # session = get_session()
+    # urls = fetch_random_urls(session, 10, True)
+    # print(urls)
+
+    url = r"https://medium.com/life-reboot-at-60/i-pressed-restart-on-my-life-at-63-heres-what-happened-next-10a415e04d71"
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 375, "height": 812},
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1",
+        )
+        page = context.new_page()
+        page.goto(url)
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_timeout(1000)
+
+        print(get_claps(page))
+
+        page.close()
+        context.close()
+        browser.close()
