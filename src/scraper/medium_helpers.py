@@ -336,7 +336,7 @@ def get_claps(page: Page) -> Optional[int]:
     Returns:
         Optional[int]: Number of claps, or None if not found.
     """
-    if claps_element := page.query_selector("div.pw-multi-vote-count p"):
+    if claps_element := page.query_selector("div.pw-multi-vote-count button"):
         try:
             claps_text = claps_element.inner_text()
             if "K" in claps_text:
