@@ -446,27 +446,34 @@ def persist_article_data(
     with_login: bool,
     insert_recc: bool = False,
 ) -> bool:
-    
+
     if not with_login:
         click_see_all_responses(page)
         scroll_to_load_comments(page)
         comments = extract_comments(page)
 
+    close_overlay(page)
+
+    metadata = extract_metadata(page)
+    tags = extract_tags(page)
+
+    assert metadata.get("title"), "JSON metadata is empty"
+
+    full_text = extract_text(page)
+    claps = get_claps(page) or 0
+    comments_count = get_comments_count(page) or 0
+    is_free = not is_paid_article(page)
+    read_time = get_read_time(page)
+    recc = extract_recommendation_urls(page)
+
     with db_persist_lock:
         try:
-            close_overlay(page)
-
-            metadata = extract_metadata(page)
-
-            assert metadata.get("title"), "JSON metadata is empty"
 
             author = get_or_create_author(
                 session,
                 metadata.get("username"),
                 metadata.get("author_url"),
             )
-
-            tags = extract_tags(page)
 
             if not author:
                 logger.warning("No author found for the article.")
@@ -477,9 +484,9 @@ def persist_article_data(
                 .first()
             )
             if article:
-                article.full_article_text = extract_text(page)
-                article.claps = get_claps(page) or 0
-                article.comments_count = get_comments_count(page) or 0
+                article.full_article_text = full_text
+                article.claps = claps
+                article.comments_count = comments_count
             else:
                 article = MediumArticle(
                     url_id=url_id,
@@ -490,11 +497,11 @@ def persist_article_data(
                     date_published=metadata.get("date_published"),
                     description=metadata.get("description"),
                     publisher_type=metadata.get("publisher_type"),
-                    is_free=not is_paid_article(page),
-                    claps=get_claps(page) or 0,
-                    comments_count=get_comments_count(page) or 0,
-                    full_article_text=extract_text(page),
-                    read_time=get_read_time(page),
+                    is_free=is_free,
+                    claps=claps,
+                    comments_count=comments_count,
+                    full_article_text=full_text,
+                    read_time=read_time,
                     type=metadata.get("type"),
                     tags=tags,
                 )
@@ -538,14 +545,12 @@ def persist_article_data(
                         continue
 
             if insert_recc:
-                recommendation_urls = extract_recommendation_urls(page)
-                for url in recommendation_urls:
+                for url in recc:
                     if not session.query(URL).filter(URL.url == url).first():
                         new_url = URL(
                             id=session.query(func.max(URL.id)).scalar() + 1,
                             url=url,
-                            found_on_url_id=url_id,
-                            priority=1.1,
+                            priority=1.0,
                         )
                         session.add(new_url)
                         session.commit()
