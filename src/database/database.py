@@ -150,11 +150,3 @@ def setup_database():
         print("Database and tables created successfully.")
     except Exception as e:
         print(f"Error creating database: {e}")
-
-
-if __name__ == "__main__":
-    session = get_session()
-    # get a random medium article
-    urls = session.query(URL).all()
-    print(len(urls))
-    session.close()
