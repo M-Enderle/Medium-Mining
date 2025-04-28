@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+db_persist_lock = threading.Lock()
 
 
 def fetch_random_urls(
@@ -45,7 +47,7 @@ def fetch_random_urls(
             .filter(
                 URL.last_crawled.is_(None),
             )
-            .order_by(URL.priority.desc())
+            # .order_by(URL.priority.desc())
             .limit(count)
         )
     else:
@@ -56,7 +58,7 @@ def fetch_random_urls(
             .filter(Sitemap.sitemap_url.like("%/posts/%"))
             .filter(MediumArticle.is_free.is_(False))
             .filter(URL.with_login.is_(False))
-            .order_by(URL.priority.desc())
+            # .order_by(URL.priority.desc())
             .limit(count)
         )
 
@@ -295,7 +297,7 @@ def get_or_create_author(
             if username_match is not None:
                 username = username_match.group(1)
         author = Author(
-            id=session.query(func.max(Author.id)).scalar() + 1,
+            id=(session.query(func.max(Author.id)).scalar() or 0) + 1,
             username=username,
             medium_url=medium_url or f"https://medium.com/{username}",
         )
@@ -444,115 +446,118 @@ def persist_article_data(
     with_login: bool,
     insert_recc: bool = False,
 ) -> bool:
-    try:
-        close_overlay(page)
+    with db_persist_lock:
+        try:
+            close_overlay(page)
 
-        metadata = extract_metadata(page)
+            metadata = extract_metadata(page)
 
-        assert metadata.get("title"), "JSON metadata is empty"
+            assert metadata.get("title"), "JSON metadata is empty"
 
-        author = get_or_create_author(
-            session,
-            metadata.get("username"),
-            metadata.get("author_url"),
-        )
-
-        tags = extract_tags(page)
-
-        if not author:
-            logger.warning("No author found for the article.")
-
-        article = (
-            session.query(MediumArticle).filter(MediumArticle.url_id == url_id).first()
-        )
-        if article:
-            article.full_article_text = extract_text(page)
-            article.claps = get_claps(page) or 0
-            article.comments_count = get_comments_count(page) or 0
-        else:
-            article = MediumArticle(
-                url_id=url_id,
-                title=metadata.get("title"),
-                author_id=author.id if author else None,
-                date_created=metadata.get("date_created"),
-                date_modified=metadata.get("date_modified"),
-                date_published=metadata.get("date_published"),
-                description=metadata.get("description"),
-                publisher_type=metadata.get("publisher_type"),
-                is_free=not is_paid_article(page),
-                claps=get_claps(page) or 0,
-                comments_count=get_comments_count(page) or 0,
-                full_article_text=extract_text(page),
-                read_time=get_read_time(page),
-                type=metadata.get("type"),
-                tags=tags,
+            author = get_or_create_author(
+                session,
+                metadata.get("username"),
+                metadata.get("author_url"),
             )
 
-        session.add(article)
-        session.commit()
+            tags = extract_tags(page)
 
-        if with_login:
+            if not author:
+                logger.warning("No author found for the article.")
+
+            article = (
+                session.query(MediumArticle)
+                .filter(MediumArticle.url_id == url_id)
+                .first()
+            )
+            if article:
+                article.full_article_text = extract_text(page)
+                article.claps = get_claps(page) or 0
+                article.comments_count = get_comments_count(page) or 0
+            else:
+                article = MediumArticle(
+                    url_id=url_id,
+                    title=metadata.get("title"),
+                    author_id=author.id if author else None,
+                    date_created=metadata.get("date_created"),
+                    date_modified=metadata.get("date_modified"),
+                    date_published=metadata.get("date_published"),
+                    description=metadata.get("description"),
+                    publisher_type=metadata.get("publisher_type"),
+                    is_free=not is_paid_article(page),
+                    claps=get_claps(page) or 0,
+                    comments_count=get_comments_count(page) or 0,
+                    full_article_text=extract_text(page),
+                    read_time=get_read_time(page),
+                    type=metadata.get("type"),
+                    tags=tags,
+                )
+
+            session.add(article)
+            session.commit()
+
+            if with_login:
+                return True
+
+            if click_see_all_responses(page):
+                scroll_to_load_comments(page)
+            comments = extract_comments(page)
+
+            if comments:
+                for comment in comments:
+                    author = get_or_create_author(
+                        session,
+                        comment.get("username"),
+                    )
+                    if (
+                        session.query(Comment)
+                        .filter(Comment.article_id == article.id)
+                        .filter(Comment.author_id == author.id if author else None)
+                        .first()
+                    ):
+                        continue
+
+                    try:
+                        comment_obj = Comment(
+                            id=(session.query(func.max(Comment.id)).scalar() or 0) + 1,
+                            article_id=article.id,
+                            author_id=author.id if author else None,
+                            text=comment.get("text"),
+                            full_text=comment.get("full_html_text"),
+                            claps=comment.get("claps"),
+                            references_article=comment.get("references_article"),
+                        )
+                        session.add(comment_obj)
+                        session.commit()
+                        session.flush()
+                    except Exception as e:
+                        session.rollback()
+                        logger.error(f"Failed to persist comment: {e}")
+                        continue
+
+            if insert_recc:
+                recommendation_urls = extract_recommendation_urls(page)
+                for url in recommendation_urls:
+                    if not session.query(URL).filter(URL.url == url).first():
+                        new_url = URL(
+                            id=session.query(func.max(URL.id)).scalar() + 1,
+                            url=url,
+                            found_on_url_id=url_id,
+                            priority=1.1,
+                        )
+                        session.add(new_url)
+                        session.commit()
+                    else:
+                        session.query(URL).filter(URL.url == url).update(
+                            {"priority": URL.priority + 0.1}
+                        )
+
             return True
 
-        if click_see_all_responses(page):
-            scroll_to_load_comments(page)
-        comments = extract_comments(page)
-
-        if comments:
-            for comment in comments:
-                author = get_or_create_author(
-                    session,
-                    comment.get("username"),
-                )
-                if (
-                    session.query(Comment)
-                    .filter(Comment.article_id == article.id)
-                    .filter(Comment.author_id == author.id if author else None)
-                    .first()
-                ):
-                    continue
-
-                try:
-                    comment_obj = Comment(
-                        id=(session.query(func.max(Comment.id)).scalar() or 0) + 1,
-                        article_id=article.id,
-                        author_id=author.id if author else None,
-                        text=comment.get("text"),
-                        full_text=comment.get("full_html_text"),
-                        claps=comment.get("claps"),
-                        references_article=comment.get("references_article"),
-                    )
-                    session.add(comment_obj)
-                    session.commit()
-                    session.flush()
-                except Exception as e:
-                    session.rollback()
-                    logger.error(f"Failed to persist comment: {e}")
-                    continue
-
-        if insert_recc:
-            recommendation_urls = extract_recommendation_urls(page)
-            for url in recommendation_urls:
-                if not session.query(URL).filter(URL.url == url).first():
-                    new_url = URL(
-                        id=session.query(func.max(URL.id)).scalar() + 1,
-                        url=url,
-                        found_on_url_id=url_id,
-                        priority=1.1,
-                    )
-                    session.add(new_url)
-                    session.commit()
-                else:
-                    session.query(URL).filter(URL.url == url).update(
-                        {"priority": URL.priority + 0.1}
-                    )
-
-        return True
-
-    except Exception as e:
-        session.rollback()
-        logger.error(f"Failed to persist article data: {e}", exc_info=True)
-        return False
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to persist article data: {e}", exc_info=True)
+            return False
 
 
 def verify_its_an_article(page: Page) -> bool:
