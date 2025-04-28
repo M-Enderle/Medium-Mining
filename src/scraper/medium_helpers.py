@@ -446,6 +446,12 @@ def persist_article_data(
     with_login: bool,
     insert_recc: bool = False,
 ) -> bool:
+    
+    if not with_login:
+        click_see_all_responses(page)
+        scroll_to_load_comments(page)
+        comments = extract_comments(page)
+
     with db_persist_lock:
         try:
             close_overlay(page)
@@ -498,10 +504,6 @@ def persist_article_data(
 
             if with_login:
                 return True
-
-            if click_see_all_responses(page):
-                scroll_to_load_comments(page)
-            comments = extract_comments(page)
 
             if comments:
                 for comment in comments:
