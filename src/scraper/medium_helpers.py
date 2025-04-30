@@ -358,15 +358,16 @@ def get_comments_count(page: Page) -> Optional[int]:
     Returns:
         Optional[int]: Number of comments, or None if not found.
     """
-    if comments_element := page.query_selector("span.pw-responses-count"):
+    if comments_element := page.query_selector("h2:has-text('Responses')"):
         try:
             comments_text = comments_element.inner_text()
-            if "K" in comments_text:
-                return int(float(comments_text.replace("K", "").strip()) * 1000)
-            elif "M" in comments_text:
-                return int(float(comments_text.replace("M", "").strip()) * 1000000)
-            else:
-                return int(comments_text.replace(",", "").strip())
+            if comments_text == "No responses yet":
+                return None
+            comments_count = re.search(r"\d+", comments_text).group(0)
+            return int(comments_count)
+        except AttributeError or ValueError:
+            logger.debug("Failed to extract comments count")
+            return None
         except ValueError:
             logger.debug("Failed to convert comments text to integer")
             return None
@@ -599,7 +600,56 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
 
 if __name__ == "__main__":
-    session = get_session()
-    urls = fetch_random_urls(session, 10, True)
-    print(len(urls))
-    session.close()
+    from playwright.sync_api import sync_playwright
+    import random
+    URL = "https://medium.com/@UnbecomingStories/10-seconds-that-ended-my-20-year-marriage-a6f367f02e53"
+    context_options = {
+        "viewport": random.choice(
+            [
+                {"width": 390, "height": 844},
+                {"width": 375, "height": 667},
+                {"width": 414, "height": 896},
+                {"width": 360, "height": 640},
+                {"width": 412, "height": 915},
+            ]
+        ),
+        "user_agent": random.choice(
+            [
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
+                "Mozilla/5.0 (Linux; Android 8.0.0; SM-G950F Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.111 Mobile Safari/537.36",
+                "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36",
+            ]
+        ),
+        "locale": random.choice(
+            [
+                "en-US",
+                "en-GB",
+                "fr-FR",
+                "de-DE",
+                "es-ES",
+                "it-IT",
+                "pt-PT",
+                "ja-JP",
+                "zh-CN",
+            ]
+        ),
+        "device_scale_factor": random.choice([1, 2]),
+    }
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+
+        context = browser.new_context(**context_options)
+        page = context.new_page()
+        page.goto(URL, wait_until="networkidle", timeout=10000)
+        page.wait_for_timeout(2000)
+
+        scroll_to_load_comments(page)
+        print(get_comments_count(page))
+
+
