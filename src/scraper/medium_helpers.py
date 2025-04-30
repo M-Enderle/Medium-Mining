@@ -479,7 +479,7 @@ def persist_article_data(
     is_free = not is_paid_article(page)
     read_time = get_read_time(page)
     recc = extract_recommendation_urls(page)
-    num_images = count_images(page)
+    num_images = count_images(full_text)
 
     with db_persist_lock:
         try:
