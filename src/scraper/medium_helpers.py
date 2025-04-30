@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
+from html_to_markdown import convert_to_markdown
 
 from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
@@ -109,10 +110,11 @@ def extract_text(page: Page) -> str:
     Returns:
         str: Extracted text from the article.
     """
-    paragraphs = page.query_selector_all(
-        "article p[data-selectable-paragraph]"
-    ) or page.query_selector_all("article p")
-    return "\n".join(p.inner_text() for p in paragraphs if p.inner_text())
+    article = page.query_selector("article")
+    if not article:
+        return ""
+
+    return convert_to_markdown(article.inner_html()).split("Share", 1)[-1].strip()
 
 
 def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
@@ -356,15 +358,16 @@ def get_comments_count(page: Page) -> Optional[int]:
     Returns:
         Optional[int]: Number of comments, or None if not found.
     """
-    if comments_element := page.query_selector("span.pw-responses-count"):
+    if comments_element := page.query_selector("h2:has-text('Responses')"):
         try:
             comments_text = comments_element.inner_text()
-            if "K" in comments_text:
-                return int(float(comments_text.replace("K", "").strip()) * 1000)
-            elif "M" in comments_text:
-                return int(float(comments_text.replace("M", "").strip()) * 1000000)
-            else:
-                return int(comments_text.replace(",", "").strip())
+            if comments_text == "No responses yet":
+                return None
+            comments_count = re.search(r"\d+", comments_text).group(0)
+            return int(comments_count)
+        except (AttributeError, ValueError):
+            logger.debug("Failed to extract comments count")
+            return None
         except ValueError:
             logger.debug("Failed to convert comments text to integer")
             return None
@@ -601,3 +604,5 @@ if __name__ == "__main__":
     urls = fetch_random_urls(session, 10, True)
     print(len(urls))
     session.close()
+
+
