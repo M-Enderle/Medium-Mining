@@ -114,7 +114,7 @@ def extract_text(page: Page) -> str:
     if not article:
         return ""
 
-    return convert_to_markdown(article.inner_html()).split("Share")[-1].strip()
+    return convert_to_markdown(article.inner_html()).split("Share", 1)[-1].strip()
 
 
 def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
@@ -365,7 +365,7 @@ def get_comments_count(page: Page) -> Optional[int]:
                 return None
             comments_count = re.search(r"\d+", comments_text).group(0)
             return int(comments_count)
-        except AttributeError or ValueError:
+        except (AttributeError, ValueError):
             logger.debug("Failed to extract comments count")
             return None
         except ValueError:
