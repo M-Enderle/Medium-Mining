@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
+from html_to_markdown import convert_to_markdown
 
 from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
@@ -109,10 +110,11 @@ def extract_text(page: Page) -> str:
     Returns:
         str: Extracted text from the article.
     """
-    paragraphs = page.query_selector_all(
-        "article p[data-selectable-paragraph]"
-    ) or page.query_selector_all("article p")
-    return "\n".join(p.inner_text() for p in paragraphs if p.inner_text())
+    article = page.query_selector("article")
+    if not article:
+        return ""
+
+    return convert_to_markdown(article.inner_html()).split("Share")[-1].strip()
 
 
 def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
