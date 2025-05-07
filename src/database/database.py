@@ -110,6 +110,7 @@ class MediumArticle(Base):
     full_article_text = Column(Text, nullable=True)
     read_time = Column(SmallInteger, nullable=True)
     type = Column(String(50), nullable=True)
+    num_images = Column(SmallInteger, nullable=True)
 
     tags = Column(ARRAY(String), nullable=True)
     author = relationship("Author", back_populates="articles")

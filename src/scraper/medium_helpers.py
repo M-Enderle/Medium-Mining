@@ -6,8 +6,8 @@ import threading
 from datetime import datetime
 from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
-from html_to_markdown import convert_to_markdown
 
+from html_to_markdown import convert_to_markdown
 from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -115,6 +115,17 @@ def extract_text(page: Page) -> str:
         return ""
 
     return convert_to_markdown(article.inner_html()).split("Share", 1)[-1].strip()
+
+
+def count_images(extracted_text: str) -> int:
+    """
+    Count the number of images in the article.
+    Args:
+        extracted_text (str): Extracted md text from the article.
+    Returns:
+        int: Number of images in the article.
+    """
+    return len(re.findall(r"!\[.*?\]\(.*?\)", extracted_text))
 
 
 def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
@@ -468,6 +479,7 @@ def persist_article_data(
     is_free = not is_paid_article(page)
     read_time = get_read_time(page)
     recc = extract_recommendation_urls(page)
+    num_images = count_images(full_text)
 
     with db_persist_lock:
         try:
@@ -490,6 +502,7 @@ def persist_article_data(
                 article.full_article_text = full_text
                 article.claps = claps
                 article.comments_count = comments_count
+                article.num_images = num_images
             else:
                 article = MediumArticle(
                     url_id=url_id,
@@ -507,6 +520,7 @@ def persist_article_data(
                     read_time=read_time,
                     type=metadata.get("type"),
                     tags=tags,
+                    num_images=num_images,
                 )
 
             session.add(article)
@@ -597,12 +611,3 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
-
-
-if __name__ == "__main__":
-    session = get_session()
-    urls = fetch_random_urls(session, 10, True)
-    print(len(urls))
-    session.close()
-
-
