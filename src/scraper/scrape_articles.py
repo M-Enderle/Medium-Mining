@@ -140,7 +140,7 @@ def create_log_panel() -> Panel:
         # Get a copy of current log messages
         messages = log_messages.copy()
     
-    log_text = "\n".join(messages) if messages else "[dim]No log messages yet...[/]"
+    log_text = "\n".join(messages[-10:]) if messages else "[dim]No log messages yet...[/]"
     return Panel(Text.from_markup(log_text), title="Log Messages", border_style="yellow")
 
 
@@ -410,7 +410,7 @@ def main(
                 yield Group(progress_panel, log_panel)
         
         # Start the dashboard display in a Live context
-        with Live(DashboardLayout(), refresh_per_second=4, console=console):
+        with Live(DashboardLayout(), refresh_per_second=10, console=console):
             # Start worker threads
             for _ in range(workers):
                 thread = Thread(
