@@ -63,7 +63,6 @@ def log_message(message: str, level: str = "info") -> None:
     
     with log_lock:
         log_messages.append(f"[dim]{timestamp}[/] {prefix} {message}")
-        log_messages[:] = log_messages[-10:]
 
 
 def update_metrics() -> None:
