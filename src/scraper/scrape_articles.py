@@ -5,13 +5,13 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Any, List, Optional
+from typing import Any, Optional, List
 
 from playwright.sync_api import Browser, BrowserContext, sync_playwright
-from rich.console import Console, ConsoleOptions, Group, RenderResult
+from rich.console import Console, Group, ConsoleOptions, RenderResult
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn
+from rich.progress import Progress, TextColumn, BarColumn, SpinnerColumn, TaskID
 from rich.table import Table
 from rich.text import Text
 from rich.traceback import install as install_rich_traceback
@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 
 try:
     import wandb
-
     WANDB_AVAILABLE = True
 except ImportError:
     WANDB_AVAILABLE = False
@@ -36,6 +35,9 @@ from scraper.medium_helpers import (
 # Set up rich console and traceback
 install_rich_traceback(show_locals=True)
 console = Console()
+# Set up rich console and traceback
+install_rich_traceback(show_locals=True)
+console = Console()
 
 # Global state variables
 shutdown_event = Event()
@@ -44,7 +46,6 @@ start_time = 0
 metrics_lock = Lock()
 log_messages: List[str] = []
 log_lock = Lock()
-
 
 # Custom log function that stores messages for display
 def log_message(message: str, level: str = "info") -> None:
@@ -62,9 +63,10 @@ def log_message(message: str, level: str = "info") -> None:
         "info": "[blue][INFO][/]",
     }
     prefix = prefixes.get(level, prefixes["info"])
-
+    
     with log_lock:
         log_messages.append(f"[dim]{timestamp}[/] {prefix} {message}")
+        log_messages[:] = log_messages[-10:]
 
 
 def update_metrics() -> None:
@@ -79,6 +81,7 @@ def update_metrics() -> None:
 def get_current_metrics() -> dict:
     """
     Get current metrics for logging.
+    Get current metrics for logging.
     Returns:
         dict: Dictionary of current metrics
     """
@@ -89,9 +92,13 @@ def get_current_metrics() -> dict:
 
     speed = articles_processed / (elapsed_time / 60) if elapsed_time > 0 else 0
     processing_time_per_article = 60 / speed if speed > 0 else 0
+    speed = articles_processed / (elapsed_time / 60) if elapsed_time > 0 else 0
+    processing_time_per_article = 60 / speed if speed > 0 else 0
 
     with SessionLocal() as session:
         total_articles = session.query(MediumArticle).count()
+        free_articles = session.query(MediumArticle).filter_by(is_free=True).count()
+        premium_articles = session.query(MediumArticle).filter_by(is_free=False).count()
         free_articles = session.query(MediumArticle).filter_by(is_free=True).count()
         premium_articles = session.query(MediumArticle).filter_by(is_free=False).count()
         free_ratio = free_articles / total_articles if total_articles > 0 else 0
@@ -128,7 +135,7 @@ def create_metrics_display(metrics: dict) -> Panel:
 
     for metric, value in metrics_data:
         table.add_row(metric, value)
-
+    
     return Panel(table, title="Medium Scraper Progress", border_style="blue")
 
 
@@ -141,13 +148,9 @@ def create_log_panel() -> Panel:
     with log_lock:
         # Get a copy of current log messages
         messages = log_messages.copy()
-
-    log_text = (
-        "\n".join(messages[-10:]) if messages else "[dim]No log messages yet...[/]"
-    )
-    return Panel(
-        Text.from_markup(log_text), title="Log Messages", border_style="yellow"
-    )
+    
+    log_text = "\n".join(messages) if messages else "[dim]No log messages yet...[/]"
+    return Panel(Text.from_markup(log_text), title="Log Messages", border_style="yellow")
 
 
 def create_browser(playwright, headless: bool) -> Browser:
@@ -264,12 +267,14 @@ def process_article(
 
         with context.new_page() as page:
             log_message(f"Processing URL: {url}")
+            log_message(f"Processing URL: {url}")
             page.goto(url, wait_until="load", timeout=20000)
             page.wait_for_timeout(random.uniform(500, 2000))
 
             random_mouse_movement(page)
 
             if not verify_its_an_article(page):
+                log_message(f"URL is not an article: {url}", "warning")
                 log_message(f"URL is not an article: {url}", "warning")
                 update_url_status(session, url_id, "not_article", with_login=with_login)
                 return
@@ -278,10 +283,12 @@ def process_article(
 
             update_url_status(session, url_id, "success", with_login=with_login)
             log_message(f"Processed URL: {url}", "success")
+            log_message(f"Processed URL: {url}", "success")
 
             update_metrics()
 
     except Exception as e:
+        log_message(f"Error processing URL {url}: {str(e)}", "error")
         log_message(f"Error processing URL {url}: {str(e)}", "error")
         update_url_status(session, url_id, "error", str(e), with_login=with_login)
 
@@ -322,11 +329,13 @@ def worker_thread(
                         browser.close()
                     except Exception as e:
                         log_message(f"Error closing browser: {str(e)}", "error")
+                        log_message(f"Error closing browser: {str(e)}", "error")
 
                 task_queue.task_done()
 
         except Exception as e:
             if not shutdown.is_set():  # Only log if not shutting down
+                log_message(f"Worker thread error: {str(e)}", "error")
                 log_message(f"Worker thread error: {str(e)}", "error")
 
 
@@ -335,6 +344,7 @@ def main(
     workers: int = 5,
     url_count: Optional[int] = None,
     with_login: bool = False,
+    use_wandb: bool = False,
     use_wandb: bool = False,
 ) -> None:
     """Main execution function for processing URLs with worker threads.
@@ -345,7 +355,9 @@ def main(
         url_count: Optional number of URLs to process
         with_login: Whether to login to Medium. Requires a login_state.json. Turning this on will scrape ONLY premium articles.
         use_wandb: Whether to use wandb for logging
+        use_wandb: Whether to use wandb for logging
     """
+    global start_time, shutdown_event, completed_tasks
     global start_time, shutdown_event, completed_tasks
 
     assert not with_login or os.path.exists(
@@ -366,10 +378,7 @@ def main(
             },
         )
     elif use_wandb and not WANDB_AVAILABLE:
-        log_message(
-            "Wandb requested but not available. Install with: pip install wandb",
-            "warning",
-        )
+        log_message("Wandb requested but not available. Install with: pip install wandb", "warning")
 
     # Set up signal handlers for graceful shutdown
     setup_signal_handlers(shutdown_event)
@@ -377,7 +386,7 @@ def main(
     start_time = time.time()
     task_queue = Queue()
     threads = []
-
+    
     # Reset completed tasks counter
     completed_tasks = 0
 
@@ -390,9 +399,7 @@ def main(
             url_data = fetch_random_urls(session, url_count, with_login)
 
         total_urls = len(url_data)
-        log_message(
-            f"Starting to process {total_urls} URLs with {workers} workers", "info"
-        )
+        log_message(f"Starting to process {total_urls} URLs with {workers} workers", "info")
 
         # Create the progress display
         progress = Progress(
@@ -402,25 +409,26 @@ def main(
             TextColumn("[bold green]{task.completed}/{task.total}"),
             TextColumn("[yellow]{task.percentage:>3.0f}%"),
             TextColumn("[cyan]{task.fields[speed]:.2f} articles/min"),
-            expand=True,
+            expand=True
         )
-
+        
         # Create the overall task
         overall_task_id = progress.add_task(
-            "[white]Processing Articles", total=total_urls, completed=0, speed=0.0
+            "[white]Processing Articles", 
+            total=total_urls,
+            completed=0,
+            speed=0.0
         )
-
+        
         # Create a layout that combines progress and logs
         class DashboardLayout:
-            def __rich_console__(
-                self, console: Console, options: ConsoleOptions
-            ) -> RenderResult:
+            def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
                 progress_panel = Panel(progress, title="Progress", border_style="blue")
                 log_panel = create_log_panel()
                 yield Group(progress_panel, log_panel)
-
+        
         # Start the dashboard display in a Live context
-        with Live(DashboardLayout(), refresh_per_second=10, console=console):
+        with Live(DashboardLayout(), refresh_per_second=4, console=console):
             # Start worker threads
             for _ in range(workers):
                 thread = Thread(
@@ -442,21 +450,30 @@ def main(
                 task_queue.put(((url[0], url[1]), i))
             for _ in range(workers):
                 task_queue.put(None)
+            # Enqueue tasks and termination signals
+            for i, url in enumerate(url_data):
+                task_queue.put(((url[0], url[1]), i))
+            for _ in range(workers):
+                task_queue.put(None)
 
             # Monitor task completion
             last_count = 0
             while not task_queue.empty() and not shutdown_event.is_set():
                 time.sleep(0.25)
-
+                
                 # Update progress display
                 with metrics_lock:
                     current_count = completed_tasks
                     elapsed = time.time() - start_time
-
+                    
                 speed = current_count / (elapsed / 60) if elapsed > 0 else 0
-
-                progress.update(overall_task_id, completed=current_count, speed=speed)
-
+                
+                progress.update(
+                    overall_task_id, 
+                    completed=current_count,
+                    speed=speed
+                )
+                
                 # Update wandb if enabled
                 if use_wandb and WANDB_AVAILABLE and current_count != last_count:
                     metrics = get_current_metrics()
@@ -465,8 +482,12 @@ def main(
 
             if shutdown_event.is_set():
                 log_message("Shutting down gracefully...", "warning")
+            if shutdown_event.is_set():
+                log_message("Shutting down gracefully...", "warning")
 
     except Exception as e:
+        log_message(f"Unhandled error: {str(e)}", "error")
+        console.print_exception(show_locals=True)
         log_message(f"Unhandled error: {str(e)}", "error")
         console.print_exception(show_locals=True)
         raise
@@ -484,7 +505,7 @@ def main(
         metrics = get_current_metrics()
         console.print("\n[bold green]Final Metrics:[/]")
         console.print(create_metrics_display(metrics))
-
+        
         if use_wandb and WANDB_AVAILABLE:
             wandb.log(metrics)
             wandb.finish()
@@ -511,9 +532,21 @@ if __name__ == "__main__":
         action="store_true",
         help="Use Weights & Biases for logging metrics",
     )
+    parser.add_argument(
+        "--use_wandb",
+        action="store_true",
+        help="Use Weights & Biases for logging metrics",
+    )
 
     args = parser.parse_args()
 
+    main(
+        headless=args.headless,
+        workers=args.workers,
+        url_count=args.url_count,
+        with_login=args.with_login,
+        use_wandb=args.use_wandb,
+    )
     main(
         headless=args.headless,
         workers=args.workers,
