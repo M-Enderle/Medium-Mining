@@ -345,7 +345,6 @@ def main(
     url_count: Optional[int] = None,
     with_login: bool = False,
     use_wandb: bool = False,
-    use_wandb: bool = False,
 ) -> None:
     """Main execution function for processing URLs with worker threads.
 
@@ -526,11 +525,6 @@ if __name__ == "__main__":
         "--with_login",
         action="store_true",
         help="Login to Medium. Requires a login_state.json.",
-    )
-    parser.add_argument(
-        "--use_wandb",
-        action="store_true",
-        help="Use Weights & Biases for logging metrics",
     )
     parser.add_argument(
         "--use_wandb",
