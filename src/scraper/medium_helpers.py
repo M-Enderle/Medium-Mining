@@ -11,6 +11,7 @@ from html_to_markdown import convert_to_markdown
 from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
+from rich import print
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 
@@ -26,8 +27,8 @@ def fetch_random_urls(
     """
     Fetch random URLs from the database that match the specified criteria.
 
-    Criteria:
-    - URLs have not been scraped yet (last_crawled is None).
+    Criteria
+    - URLs have not been scrapedP yet (last_crawled is None).
     - URLs are from sitemaps that contain "/posts/" in the URL.
 
     Args:
@@ -128,7 +129,7 @@ def count_images(extracted_text: str) -> int:
     return len(re.findall(r"!\[.*?\]\(.*?\)", extracted_text))
 
 
-def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
+def click_see_all_responses(page: Page, timeout: int = 1000):
     """
     Click the "See all responses" button if it exists.
     Args:
@@ -138,16 +139,9 @@ def click_see_all_responses(page: Page, timeout: int = 1000) -> bool:
         bool: True if the button was clicked, False otherwise.
     """
     try:
-        page.wait_for_selector('button:has-text("See all responses")', timeout=timeout)
-        button = page.query_selector('button:has-text("See all responses")')
-        if button and button.is_visible():
-            button.click(timeout=timeout)
-            page.wait_for_load_state("load", timeout=timeout)
-            page.wait_for_timeout(2000)
-            return True
+        page.evaluate("""document.querySelector('button[aria-label="responses"]').click();""")
     except Exception as e:
         logger.debug(f"Failed to click responses button: {e}")
-    return False
 
 
 def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
@@ -194,26 +188,29 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
         ):
             continue
 
-        # TODO check that the author is handled correctly
         comment = {
             "references_article": el.locator("p[id^='embedded-quote']").count() > 0,
             "username": None,
-            "author_name": None,
-            "medium_username": None,
             "text": None,
             "claps": None,
-            "full_html_text": el.inner_text(),
         }
-
-        if authors := el.locator("a[href^='/@']").all():
-            href = authors[0].get_attribute("href")
-            username = href.split("?")[0].split("/")[1] if href else "Unknown"
-            comment.update(username=username, medium_username=username)
+        
+        if authors := el.locator("a[href*='/@']").all():
             try:
-                if (name := authors[0].inner_text().strip()) and name != username:
-                    comment["author_name"] = name
-            except:
-                pass
+                author = authors[0]
+                author_url = author.get_attribute("href")
+                if author_url:
+                    # Extract username from URL (format: /@username or /@username?)
+                    username_match = re.search(r'/@([^/?]+)', author_url)
+                    if username_match:
+                        comment["username"] = f"{username_match.group(1)}"
+            except Exception as e:
+                print(e)
+        else:
+            str = el.inner_html()
+            pattern = r'<p class="be b bf z adl adm adn ado adp adq adr ads bj">(.*?)</p>'
+            matches = re.findall(pattern, str)
+            print(matches)
 
         try:
             comment["text"] = el.evaluate(
@@ -227,8 +224,12 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
                     logger.debug(f"Failed to parse claps: {e}")
         except Exception as e:
             logger.debug(f"Error extracting comment text: {e}")
+            
+        if not comment["text"]:
+            continue
 
         comments.append(comment)
+        
     return comments
 
 
@@ -293,6 +294,9 @@ def get_or_create_author(
     """
     if not username and not medium_url:
         return None
+    
+    if username:
+        username = username.strip("@")
 
     author = (
         session.query(Author)
@@ -611,3 +615,67 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
+
+
+if __name__ == "__main__":
+    import time
+    from playwright.sync_api import sync_playwright
+    
+    # Set up a simple shutdown event for testing
+    test_shutdown_event = threading.Event()
+    
+    with sync_playwright() as p:
+        # Launch mobile browser with appropriate viewport and user agent
+        mobile_viewport = {"width": 375, "height": 812}  # iPhone X dimensions
+        mobile_user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+        
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context(
+            viewport=mobile_viewport,
+            user_agent=mobile_user_agent,
+            device_scale_factor=2.0
+        )
+        page = context.new_page()
+        
+        try:
+            # Navigate to the test article
+            url = "https://medium.com/@maxim-gorin/stop-writing-if-else-trees-use-the-state-pattern-instead-1fe9ff39a39c"
+            print(f"Navigating to {url} on mobile browser")
+            page.goto(url)
+            
+            # Wait for the page to load
+            page.wait_for_load_state("networkidle")
+            
+            # Verify it's an article
+            if not verify_its_an_article(page):
+                print("This page is not a Medium article")
+                browser.close()
+                exit(1)
+                
+            # wait 2 seconds
+            page.wait_for_timeout(2000)
+            
+            close_overlay(page)
+            
+            # Try to click on the responses button to show comments
+            print("Attempting to load comments...")
+            click_see_all_responses(page)
+            
+            # Scroll to load all comments
+            print("Scrolling to load all comments...")
+            scroll_to_load_comments(page, 1)
+            
+            # Extract comments
+            print("Extracting comments...")
+            comments = extract_comments(page)
+            
+            print(comments)
+            
+            print(len(comments))
+        
+        except Exception as e:
+            print(f"Error during test: {e}")
+        
+        finally:
+            print("\nClosing browser...")
+            browser.close()
