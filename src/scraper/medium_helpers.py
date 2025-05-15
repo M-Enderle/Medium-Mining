@@ -1,29 +1,25 @@
 import json
-import logging
 import re
 import signal
 import threading
 from datetime import datetime
-from pprint import pprint
 from typing import Any, Dict, List, Optional, Tuple
 
 from html_to_markdown import convert_to_markdown
 from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
-from rich import print
-from rich.console import Console
 
-from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
-from scraper.log_utils import log_message
+from database.database import URL, Author, Comment, MediumArticle, Sitemap
+from scraper.log_utils import log_message, set_log_level
+from scraper.playwright_helpers import (
+    click_see_all_responses,
+    close_overlay,
+    scroll_to_load_comments,
+    verify_its_an_article,
+)
 
-logger = logging.getLogger(__name__)
-
-# Create console for logging
-console = Console()
-log_lock = threading.Lock()
-log_messages: List[str] = []
-
+# Create a lock for database operations
 db_persist_lock = threading.Lock()
 
 
@@ -102,7 +98,8 @@ def update_url_status(
             url.with_login = with_login
             session.commit()
             log_message(
-                f"Updated URL {url_id} status: {success}, with_login: {with_login}", "debug"
+                f"Updated URL {url_id} status: {success}, with_login: {with_login}",
+                "debug",
             )
     except Exception as e:
         session.rollback()
@@ -135,80 +132,9 @@ def count_images(extracted_text: str) -> int:
     return len(re.findall(r"!\[.*?\]\(.*?\)", extracted_text))
 
 
-def click_see_all_responses(page: Page, timeout: int = 1000):
-    """
-    Click the "See all responses" button if it exists.
-    Args:
-        page (Page): Playwright Page object.
-        timeout (int): Timeout for the click action.
-    Returns:
-        bool: True if the button was clicked, False otherwise.
-    """
-    try:
-        page.evaluate("""
-        () => {
-            const clickButton = () => {
-                const button = document.querySelector('button[aria-label="responses"]');
-                if (button) {
-                    button.click();
-                    return true;
-                }
-                return false;
-            };
-            
-            // Try clicking up to 3 times
-            if (clickButton()) return true;
-            
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    if (clickButton()) resolve(true);
-                    else {
-                        setTimeout(() => {
-                            if (clickButton()) resolve(true);
-                            else resolve(false);
-                        }, 1000);
-                    }
-                }, 1000);
-            });
-        }
-        """)
-        return True
-    except Exception as e:
-        log_message(f"Failed to click responses button: {e}", "debug")
-        return False
-
-
-def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
-    """
-    Scrolls down in the comment section until all comments are loaded or max_scrolls is reached.
-    Args:
-        page (Page): Playwright Page object.
-        max_scrolls (int): Maximum number of scrolls to perform.
-    """
-    html = page.content()
-    for _ in range(max_scrolls):
-        try:
-            page.evaluate(
-                """
-                () => {
-                    const dialog = document.querySelector('div[role="dialog"]');
-                    if (dialog) dialog.lastElementChild.firstElementChild.scrollBy(0, 20000);
-                }
-            """
-            )
-            page.wait_for_timeout(1000)
-            page.wait_for_load_state("load", timeout=5000)
-            if page.content() == html:
-                return
-            html = page.content()
-        except Exception as e:
-            log_message(f"Scroll error on page {page.url}: {e}", "warning")
-            return
-
-
 def extract_comments(page: Page) -> List[Dict[str, Any]]:
     """
-    Extract comments from the article page. This is dont by
+    Extract comments from the article page.
 
     Args:
         page (Page): Playwright Page object.
@@ -218,41 +144,27 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
     comments = []
     total_elements = 0
     filtered_elements = 0
-    
+
     # Get all potential comment elements
     elements = page.locator("xpath=//pre/ancestor::div[5]").all()
     log_message(f"Found {len(elements)} potential comment elements", "debug")
-    
+
     for el in elements:
-        log_message(f"Processing comment element {el}", "info")
         total_elements += 1
-        
-        # Use a more detailed JavaScript to debug the border property
-        debug_info = el.evaluate("""
-        (el) => {
-            const parent = el.parentElement;
-            const parentParent = parent ? parent.parentElement : null;
-            
-            return {
-                selfBorder: window.getComputedStyle(el).borderLeft,
-                parentBorder: parent ? window.getComputedStyle(parent).borderLeft : null,
-                parentParentBorder: parentParent ? window.getComputedStyle(parentParent).borderLeft : null,
-                classes: {
-                    self: el.className,
-                    parent: parent ? parent.className : null,
-                    parentParent: parentParent ? parentParent.className : null
-                }
-            };
-        }
-        """)
-        
-        log_message(f"Element {total_elements} debug info: {debug_info}", "debug")
-        
-        # filter out answer comments
-        border_left = el.evaluate("(el) => window.getComputedStyle(el.parentElement.parentElement).borderLeft")
-        if border_left == "3px solid rgb(242, 242, 242)":
-            log_message(f"Filtered answer comment with border: {border_left}", "debug")
-            filtered_elements += 1
+
+        # filter out answer comments based on border
+        try:
+            border_left = el.evaluate(
+                "(el) => window.getComputedStyle(el.parentElement.parentElement).borderLeft"
+            )
+            if border_left == "3px solid rgb(242, 242, 242)":
+                log_message(
+                    f"Filtered answer comment with border: {border_left}", "debug"
+                )
+                filtered_elements += 1
+                continue
+        except Exception as e:
+            log_message(f"Error checking comment border: {e}", "debug")
             continue
 
         comment = {
@@ -262,26 +174,69 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
             "text": None,
             "claps": None,
         }
-        
-        if authors := el.locator("a[href*='/@']").all():
-            try:
+
+        # Extract author information
+        try:
+            if authors := el.locator("a[href*='/@']").all():
                 author = authors[0]
                 author_url = author.get_attribute("href")
                 if author_url:
                     # Extract username from URL (format: /@username or /@username?)
-                    username_match = re.search(r'/@([^/?]+)', author_url)
+                    username_match = re.search(r"/@([^/?]+)", author_url)
                     if username_match:
                         comment["username"] = f"{username_match.group(1)}"
-            except Exception as e:
-                log_message(f"Error extracting comment author: {e}", "debug")
-        else:
-            user_url_element = el.locator("a").first
-            if "medium.com/" in user_url_element.get_attribute("href"):
-                comment["user_url"] = user_url_element.get_attribute("href").split("?")[0]
+                        comment["user_url"] = author_url.split("?")[0]
+            else:
+                user_url_element = el.locator("a").first
+                if user_url_element and "medium.com/" in (
+                    user_url_element.get_attribute("href") or ""
+                ):
+                    comment["user_url"] = user_url_element.get_attribute("href").split(
+                        "?"
+                    )[0]
+        except Exception as e:
+            log_message(f"Error extracting comment author: {e}", "debug")
+
+        # Extract comment text safely
         try:
-            comment["text"] = el.evaluate(
-                "(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"
+            # Try a safer approach to get the comment text
+            comment_text = el.evaluate(
+                """
+            (el) => {
+                try {
+                    // Navigate through the DOM structure more cautiously
+                    const firstChild = el.firstElementChild;
+                    if (!firstChild) return null;
+                    
+                    const firstInnerChild = firstChild.firstElementChild;
+                    if (!firstInnerChild) return null;
+                    
+                    const secondInnerChild = firstInnerChild.firstElementChild;
+                    if (!secondInnerChild) return null;
+                    
+                    const lastChild = secondInnerChild.lastElementChild;
+                    if (!lastChild) return null;
+                    
+                    const prevSibling = lastChild.previousElementSibling;
+                    if (!prevSibling) return null;
+                    
+                    return prevSibling.innerText;
+                } catch (e) {
+                    // Try alternative method to find text
+                    const paragraphs = el.querySelectorAll('p:not([id^="embedded-quote"])');
+                    if (paragraphs.length) {
+                        return Array.from(paragraphs).map(p => p.innerText).join('\\n');
+                    }
+                    return null;
+                }
+            }
+            """
             )
+
+            if comment_text:
+                comment["text"] = comment_text
+
+            # Extract claps
             if claps := el.locator("div.pw-multi-vote-count").first:
                 try:
                     comment["claps"] = int(claps.inner_text(timeout=500)) or 0
@@ -290,15 +245,18 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
                     log_message(f"Failed to parse claps: {e}", "debug")
         except Exception as e:
             log_message(f"Error extracting comment text: {e}", "debug")
-            
+
         if not comment["text"]:
             log_message("Skipping comment with no text", "debug")
             filtered_elements += 1
             continue
 
         comments.append(comment)
-    
-    log_message(f"Found {total_elements} total elements, filtered {filtered_elements}, kept {len(comments)} comments", "debug")
+
+    log_message(
+        f"Found {total_elements} total elements, filtered {filtered_elements}, kept {len(comments)} comments",
+        "debug",
+    )
     return comments
 
 
@@ -363,7 +321,7 @@ def get_or_create_author(
     """
     if not username and not medium_url:
         return None
-    
+
     if username:
         username = username.strip("@")
 
@@ -389,9 +347,13 @@ def get_or_create_author(
         )
         session.add(author)
         session.commit()
-        log_message(f"Created new author: {author.username} ({author.medium_url})", "debug")
+        log_message(
+            f"Created new author: {author.username} ({author.medium_url})", "debug"
+        )
     else:
-        log_message(f"Found existing author: {author.username} ({author.medium_url})", "debug")
+        log_message(
+            f"Found existing author: {author.username} ({author.medium_url})", "debug"
+        )
     return author
 
 
@@ -472,25 +434,6 @@ def is_paid_article(page: Page) -> bool:
         return False
 
 
-def close_overlay(page: Page) -> None:
-    """
-    Close the overlay if it exists.
-    Args:
-        page (Page): Playwright Page object.
-    """
-    try:
-        page.evaluate(
-            """
-            () => {
-                const overlay = document.querySelector("button[aria-label='close']");
-                if (overlay) overlay.click();
-            }
-            """
-        )
-    except Exception as e:
-        log_message(f"Error closing overlay: {e}", "debug")
-
-
 def extract_metadata(page: Page) -> Dict[str, Any]:
     """
     Extract metadata from the article page.
@@ -533,7 +476,7 @@ def persist_article_data(
     with_login: bool,
     insert_recc: bool = False,
 ) -> bool:
-    
+
     page.wait_for_load_state("networkidle")
 
     close_overlay(page)
@@ -550,7 +493,7 @@ def persist_article_data(
     read_time = get_read_time(page)
     recc = extract_recommendation_urls(page)
     num_images = count_images(full_text)
-    
+
     click_see_all_responses(page)
     scroll_to_load_comments(page)
     page.wait_for_timeout(500)
@@ -661,29 +604,15 @@ def persist_article_data(
             return False
 
 
-def verify_its_an_article(page: Page) -> bool:
-    """
-    Verify if the page is an article.
-    Args:
-        page (Page): Playwright Page object.
-    Returns:
-        bool: True if the page is an article, False otherwise.
-    """
-    try:
-        return page.query_selector("span[data-testid='storyReadTime']") is not None
-    except Exception as e:
-        log_message(f"Error verifying article: {e}", "debug")
-        return False
-
-
 def setup_signal_handlers(shutdown_event: threading.Event) -> None:
     """
     Set up signal handlers for graceful shutdown.
     Args:
-        shutdown_event (threading.Event): Event to signal shutdown.
+        shutdown_event (threading.Event): Event to signal graceful shutdown.
     """
 
     def handler(sig, frame):
+        log_message("Received signal. Shutting down gracefully...", "warning")
         shutdown_event.set()
 
     signal.signal(signal.SIGINT, handler)
@@ -692,74 +621,73 @@ def setup_signal_handlers(shutdown_event: threading.Event) -> None:
 
 if __name__ == "__main__":
     import time
+
     from playwright.sync_api import sync_playwright
-    
-    # Configure the logger for more detailed output
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
-    
+
+    # Set the log level for more detailed output
+    set_log_level("debug")
+    log_message("Starting test run of comment extraction", "info")
+
     # Set up a simple shutdown event for testing
     test_shutdown_event = threading.Event()
-    
+
     with sync_playwright() as p:
         # Launch mobile browser with appropriate viewport and user agent
         mobile_viewport = {"width": 375, "height": 812}  # iPhone X dimensions
         mobile_user_agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
-        
+
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(
             viewport=mobile_viewport,
             user_agent=mobile_user_agent,
-            device_scale_factor=2.0
+            device_scale_factor=2.0,
         )
         page = context.new_page()
-        
+
         try:
             # Navigate to the test article
             url = "https://medium.com/coinmonks/1k-to-10k-crypto-challenge-week-4-massive-portfolio-changes-6bafb07c7f61"
             log_message(f"Navigating to {url} on mobile browser", "info")
             page.goto(url)
-            
+
             # Wait for the page to load
             page.wait_for_load_state("networkidle")
-            
+
             # Verify it's an article
             if not verify_its_an_article(page):
                 log_message("This page is not a Medium article", "error")
                 browser.close()
                 exit(1)
-                
+
             close_overlay(page)
-            
+
             # Try to click on the responses button to show comments
             log_message("Attempting to load comments...", "info")
             click_see_all_responses(page)
-            
+
             # Scroll to load all comments
             log_message("Scrolling to load all comments...", "info")
             scroll_to_load_comments(page, 10)
-            
+
             page.wait_for_timeout(1000)
-            
+
             # Extract comments
             log_message("Extracting comments...", "info")
             comments = extract_comments(page)
-            
+
             for comment in comments:
                 if not (comment.get("username") or comment.get("user_url")):
-                    log_message(f"Comment without author information: {comment}", "warning")
-                    
+                    log_message(
+                        f"Comment without author information: {comment}", "warning"
+                    )
+
             log_message(f"Found {len(comments)} comments in total", "info")
-            print(comments)
-        
+            for i, comment in enumerate(comments):
+                log_message(f"Comment {i+1}: {comment.get('text')[:100]}...", "info")
+
         except Exception as e:
             log_message(f"Error during test: {e}", "error")
-        
+
         finally:
             log_message("Closing browser...", "info")
             browser.close()

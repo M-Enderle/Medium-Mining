@@ -5,13 +5,13 @@ import time
 from datetime import datetime
 from queue import Queue
 from threading import Event, Lock, Thread
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 from playwright.sync_api import Browser, BrowserContext, sync_playwright
-from rich.console import Console, Group, ConsoleOptions, RenderResult
+from rich.console import Console, ConsoleOptions, Group, RenderResult
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import Progress, TextColumn, BarColumn, SpinnerColumn, TaskID
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 from rich.traceback import install as install_rich_traceback
@@ -19,19 +19,25 @@ from sqlalchemy.orm import Session
 
 try:
     import wandb
+
     WANDB_AVAILABLE = True
 except ImportError:
     WANDB_AVAILABLE = False
 
 from database.database import URL, MediumArticle, SessionLocal
+from scraper.log_utils import log_lock, log_message, log_messages, set_log_level
 from scraper.medium_helpers import (
     fetch_random_urls,
     persist_article_data,
     setup_signal_handlers,
     update_url_status,
+)
+from scraper.playwright_helpers import (
+    create_browser,
+    get_context,
+    random_mouse_movement,
     verify_its_an_article,
 )
-from scraper.log_utils import log_message, log_messages, log_lock, set_log_level
 
 # Set up rich console and traceback
 install_rich_traceback(show_locals=True)
@@ -42,6 +48,7 @@ shutdown_event = Event()
 completed_tasks = 0
 start_time = 0
 metrics_lock = Lock()
+
 
 def update_metrics() -> None:
     """
@@ -104,7 +111,7 @@ def create_metrics_display(metrics: dict) -> Panel:
 
     for metric, value in metrics_data:
         table.add_row(metric, value)
-    
+
     return Panel(table, title="Medium Scraper Progress", border_style="blue")
 
 
@@ -117,95 +124,11 @@ def create_log_panel() -> Panel:
     with log_lock:
         # Get a copy of current log messages
         messages = log_messages.copy()
-    
+
     log_text = "\n".join(messages) if messages else "[dim]No log messages yet...[/]"
-    return Panel(Text.from_markup(log_text), title="Log Messages", border_style="yellow")
-
-
-def create_browser(playwright, headless: bool) -> Browser:
-    """
-    Create a Playwright browser instance.
-    Args:
-        playwright: The Playwright instance.
-        headless (bool): Whether to run in headless mode.
-    Returns:
-        Browser: The Playwright browser instance
-    """
-    return playwright.chromium.launch(
-        headless=headless,
-        args=["--disable-blink-features=AutomationControlled"],
+    return Panel(
+        Text.from_markup(log_text), title="Log Messages", border_style="yellow"
     )
-
-
-def get_context(browser: Browser, with_login: bool) -> BrowserContext:
-    """
-    Randomize the user agent for the browser context.
-    Args:
-        browser (Browser): The Playwright browser instance.
-        with_login (bool): Whether to login to Medium.
-    Returns:
-        BrowserContext: The browser context with a randomized user agent.
-    """
-    context_options = {
-        "viewport": random.choice(
-            [
-                {"width": 390, "height": 844},
-                {"width": 375, "height": 667},
-                {"width": 414, "height": 896},
-                {"width": 360, "height": 640},
-                {"width": 412, "height": 915},
-            ]
-        ),
-        "user_agent": random.choice(
-            [
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 14_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1",
-                "Mozilla/5.0 (Linux; Android 8.0.0; SM-G950F Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.111 Mobile Safari/537.36",
-                "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36",
-            ]
-        ),
-        "locale": random.choice(
-            [
-                "en-US",
-                "en-GB",
-                "fr-FR",
-                "de-DE",
-                "es-ES",
-                "it-IT",
-                "pt-PT",
-                "ja-JP",
-                "zh-CN",
-            ]
-        ),
-        "device_scale_factor": random.choice([1, 2]),
-    }
-
-    if with_login:
-        context_options["storage_state"] = "login_state.json"
-
-    context = browser.new_context(**context_options)
-
-    # Mask automation
-    context.add_init_script(
-        "Object.defineProperty(navigator,'webdriver',{get:()=>false});"
-    )
-
-    return context
-
-
-def random_mouse_movement(page: Any) -> None:
-    """
-    Simulate random mouse movements and scrolling.
-    Args:
-        page (Any): The Playwright page instance.
-    """
-    time.sleep(random.uniform(0.5, 1.5))
-    page.mouse.move(
-        random.randint(0, 300), random.randint(0, 300), steps=random.randint(10, 20)
-    )
-    page.mouse.wheel(0, random.randint(100, 300))
-    time.sleep(random.uniform(0.3, 0.8))
 
 
 def process_article(
@@ -230,6 +153,7 @@ def process_article(
         return
 
     url_id, url = url_data
+    context = None
 
     try:
         log_message(f"Worker {worker_idx} starting to process URL ID {url_id}", "debug")
@@ -237,30 +161,76 @@ def process_article(
 
         with context.new_page() as page:
             log_message(f"Processing URL: {url}")
-            log_message(f"Opening URL with timeout of 20000ms", "debug")
-            page.goto(url, wait_until="load", timeout=20000)
-            page.wait_for_timeout(random.uniform(500, 2000))
 
-            random_mouse_movement(page)
-            log_message(f"Verifying if URL is an article: {url}", "debug")
-
-            if not verify_its_an_article(page):
-                log_message(f"URL is not an article: {url}", "warning")
-                update_url_status(session, url_id, "not_article", with_login=with_login)
+            # Navigate to the URL with proper error handling
+            try:
+                log_message(f"Opening URL with timeout of 20000ms", "debug")
+                page.goto(url, wait_until="load", timeout=20000)
+                page.wait_for_timeout(random.uniform(500, 2000))
+            except Exception as e:
+                log_message(f"Error loading URL {url}: {str(e)}", "error")
+                update_url_status(
+                    session, url_id, "navigation_error", str(e), with_login=with_login
+                )
                 return
 
-            log_message(f"Persisting article data for URL: {url}", "debug")
-            persist_article_data(session, url_id, page, with_login)
+            # Add random mouse movement to appear more human-like
+            try:
+                random_mouse_movement(page)
+            except Exception as e:
+                log_message(f"Error during random mouse movement: {str(e)}", "debug")
+                # Continue despite mouse movement error
 
+            # Verify the page is an article
+            try:
+                log_message(f"Verifying if URL is an article: {url}", "debug")
+                if not verify_its_an_article(page):
+                    log_message(f"URL is not an article: {url}", "warning")
+                    update_url_status(
+                        session, url_id, "not_article", with_login=with_login
+                    )
+                    return
+            except Exception as e:
+                log_message(f"Error verifying article: {str(e)}", "error")
+                update_url_status(
+                    session, url_id, "verification_error", str(e), with_login=with_login
+                )
+                return
+
+            # Persist article data
+            try:
+                log_message(f"Persisting article data for URL: {url}", "debug")
+                if not persist_article_data(session, url_id, page, with_login):
+                    log_message(
+                        f"Failed to persist article data for URL: {url}", "error"
+                    )
+                    update_url_status(
+                        session, url_id, "persist_error", with_login=with_login
+                    )
+                    return
+            except Exception as e:
+                log_message(f"Error persisting article data: {str(e)}", "error")
+                update_url_status(
+                    session, url_id, "persist_error", str(e), with_login=with_login
+                )
+                return
+
+            # Update URL status and metrics
             update_url_status(session, url_id, "success", with_login=with_login)
             log_message(f"Processed URL: {url}", "success")
-
             update_metrics()
 
     except Exception as e:
         log_message(f"Error processing URL {url}: {str(e)}", "error")
         log_message(f"Exception details: {repr(e)}", "debug")
         update_url_status(session, url_id, "error", str(e), with_login=with_login)
+    finally:
+        # Ensure context is closed to prevent memory leaks
+        if context:
+            try:
+                context.close()
+            except Exception as e:
+                log_message(f"Error closing context: {str(e)}", "debug")
 
 
 def worker_thread(
@@ -280,20 +250,22 @@ def worker_thread(
         with_login (bool): Whether to login to Medium.
     """
     log_message("Worker thread starting", "debug")
-    
+
     while not shutdown.is_set():
         try:
-            log_message("Waiting for task from queue", "debug")
             task = task_queue.get(timeout=1)
             if task is None:
                 log_message("Received termination signal, stopping worker", "debug")
+                task_queue.task_done()
                 break
 
             url_data, worker_idx = task
-            log_message(f"Got task for URL ID {url_data[0]} assigned to worker {worker_idx}", "debug")
+            log_message(
+                f"Got task for URL ID {url_data[0]} assigned to worker {worker_idx}",
+                "debug",
+            )
 
             with sync_playwright() as p:
-                log_message("Starting browser", "debug")
                 browser = browser_factory(p)
                 try:
                     with session_factory() as session:
@@ -302,13 +274,12 @@ def worker_thread(
                         )
                 finally:
                     try:
-                        log_message("Closing browser", "debug")
                         browser.close()
                     except Exception as e:
                         log_message(f"Error closing browser: {str(e)}", "error")
 
-                task_queue.task_done()
-                log_message(f"Completed task for URL ID {url_data[0]}", "debug")
+            task_queue.task_done()
+            log_message(f"Completed task for URL ID {url_data[0]}", "debug")
 
         except Exception as e:
             if not shutdown.is_set():  # Only log if not shutting down
@@ -358,7 +329,10 @@ def main(
             },
         )
     elif use_wandb and not WANDB_AVAILABLE:
-        log_message("Wandb requested but not available. Install with: pip install wandb", "warning")
+        log_message(
+            "Wandb requested but not available. Install with: pip install wandb",
+            "warning",
+        )
 
     # Set up signal handlers for graceful shutdown
     setup_signal_handlers(shutdown_event)
@@ -366,7 +340,7 @@ def main(
     start_time = time.time()
     task_queue = Queue()
     threads = []
-    
+
     # Reset completed tasks counter
     completed_tasks = 0
 
@@ -379,7 +353,9 @@ def main(
             url_data = fetch_random_urls(session, url_count, with_login)
 
         total_urls = len(url_data)
-        log_message(f"Starting to process {total_urls} URLs with {workers} workers", "info")
+        log_message(
+            f"Starting to process {total_urls} URLs with {workers} workers", "info"
+        )
 
         # Create the progress display
         progress = Progress(
@@ -389,35 +365,35 @@ def main(
             TextColumn("[bold green]{task.completed}/{task.total}"),
             TextColumn("[yellow]{task.percentage:>3.0f}%"),
             TextColumn("[cyan]{task.fields[speed]:.2f} articles/min"),
-            expand=True
+            expand=True,
         )
-        
+
         # Create the overall task
         overall_task_id = progress.add_task(
-            "[white]Processing Articles", 
-            total=total_urls,
-            completed=0,
-            speed=0.0
+            "[white]Processing Articles", total=total_urls, completed=0, speed=0.0
         )
-        
+
         # Create a layout that combines progress and logs
         class DashboardLayout:
-            def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
+            def __rich_console__(
+                self, console: Console, options: ConsoleOptions
+            ) -> RenderResult:
                 progress_panel = Panel(progress, title="Progress", border_style="blue")
                 log_panel = create_log_panel()
-                yield Group(progress_panel, log_panel)
-        
+                metrics_panel = create_metrics_display(get_current_metrics())
+                yield Group(progress_panel, metrics_panel, log_panel)
+
         # Start the dashboard display in a Live context
         with Live(DashboardLayout(), refresh_per_second=4, console=console):
             # Start worker threads
-            for _ in range(workers):
+            for i in range(workers):
                 thread = Thread(
                     target=worker_thread,
                     args=(
                         task_queue,
                         lambda p: create_browser(p, headless),
                         session_factory,
-                        shutdown_event,  # Pass the shutdown event to workers
+                        shutdown_event,
                         with_login,
                     ),
                     daemon=True,
@@ -425,30 +401,31 @@ def main(
                 threads.append(thread)
                 thread.start()
 
-            # Enqueue tasks and termination signals
+            # Enqueue tasks
             for i, url in enumerate(url_data):
-                task_queue.put(((url[0], url[1]), i))
+                task_queue.put(((url[0], url[1]), i % workers))
+
+            # Add termination signals after all tasks
             for _ in range(workers):
                 task_queue.put(None)
 
             # Monitor task completion
             last_count = 0
-            while not task_queue.empty() and not shutdown_event.is_set():
+            while (
+                any(thread.is_alive() for thread in threads)
+                and not shutdown_event.is_set()
+            ):
                 time.sleep(0.25)
-                
+
                 # Update progress display
                 with metrics_lock:
                     current_count = completed_tasks
                     elapsed = time.time() - start_time
-                    
+
                 speed = current_count / (elapsed / 60) if elapsed > 0 else 0
-                
-                progress.update(
-                    overall_task_id, 
-                    completed=current_count,
-                    speed=speed
-                )
-                
+
+                progress.update(overall_task_id, completed=current_count, speed=speed)
+
                 # Update wandb if enabled
                 if use_wandb and WANDB_AVAILABLE and current_count != last_count:
                     metrics = get_current_metrics()
@@ -476,7 +453,7 @@ def main(
         metrics = get_current_metrics()
         console.print("\n[bold green]Final Metrics:[/]")
         console.print(create_metrics_display(metrics))
-        
+
         if use_wandb and WANDB_AVAILABLE:
             wandb.log(metrics)
             wandb.finish()
