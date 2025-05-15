@@ -17,7 +17,6 @@ from rich.console import Console
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
 from scraper.log_utils import log_message
 
-# Initialize logger but don't configure it yet - we'll do that in __main__
 logger = logging.getLogger(__name__)
 
 # Create console for logging
@@ -26,27 +25,6 @@ log_lock = threading.Lock()
 log_messages: List[str] = []
 
 db_persist_lock = threading.Lock()
-
-
-def log_message(message: str, level: str = "info") -> None:
-    """
-    Add a log message to the display.
-    Args:
-        message (str): Message to log
-        level (str): Log level (info, warning, error, success)
-    """
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    prefixes = {
-        "error": "[red][ERROR][/]",
-        "warning": "[yellow][WARN][/]",
-        "success": "[green][SUCCESS][/]",
-        "info": "[blue][INFO][/]",
-    }
-    prefix = prefixes.get(level, prefixes["info"])
-    
-    with log_lock:
-        log_messages.append(f"[dim]{timestamp}[/] {prefix} {message}")
-        log_messages[:] = log_messages[-30:]
 
 
 def fetch_random_urls(
@@ -558,11 +536,6 @@ def persist_article_data(
     
     page.wait_for_load_state("networkidle")
 
-    click_see_all_responses(page)
-    scroll_to_load_comments(page)
-    page.wait_for_timeout(500)
-    comments = extract_comments(page)
-
     close_overlay(page)
 
     metadata = extract_metadata(page)
@@ -577,6 +550,11 @@ def persist_article_data(
     read_time = get_read_time(page)
     recc = extract_recommendation_urls(page)
     num_images = count_images(full_text)
+    
+    click_see_all_responses(page)
+    scroll_to_load_comments(page)
+    page.wait_for_timeout(500)
+    comments = extract_comments(page)
 
     with db_persist_lock:
         try:
@@ -743,7 +721,7 @@ if __name__ == "__main__":
         
         try:
             # Navigate to the test article
-            url = "https://blog.startupstash.com/the-uks-financial-system-will-crash-in-2023-but-they-don-t-want-you-to-know-4c84d8c72fb0"
+            url = "https://medium.com/coinmonks/1k-to-10k-crypto-challenge-week-4-massive-portfolio-changes-6bafb07c7f61"
             log_message(f"Navigating to {url} on mobile browser", "info")
             page.goto(url)
             
