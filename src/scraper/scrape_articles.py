@@ -31,10 +31,8 @@ from scraper.medium_helpers import (
     update_url_status,
     verify_its_an_article,
 )
+from scraper.log_utils import log_message, log_messages, log_lock, set_log_level
 
-# Set up rich console and traceback
-install_rich_traceback(show_locals=True)
-console = Console()
 # Set up rich console and traceback
 install_rich_traceback(show_locals=True)
 console = Console()
@@ -44,30 +42,6 @@ shutdown_event = Event()
 completed_tasks = 0
 start_time = 0
 metrics_lock = Lock()
-log_messages: List[str] = []
-log_lock = Lock()
-
-# Custom log function that stores messages for display
-def log_message(message: str, level: str = "info") -> None:
-    """
-    Add a log message to the display.
-    Args:
-        message (str): Message to log
-        level (str): Log level (info, warning, error, success)
-    """
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    prefixes = {
-        "error": "[red][ERROR][/]",
-        "warning": "[yellow][WARN][/]",
-        "success": "[green][SUCCESS][/]",
-        "info": "[blue][INFO][/]",
-    }
-    prefix = prefixes.get(level, prefixes["info"])
-    
-    with log_lock:
-        log_messages.append(f"[dim]{timestamp}[/] {prefix} {message}")
-        log_messages[:] = log_messages[-10:]
-
 
 def update_metrics() -> None:
     """
@@ -81,7 +55,6 @@ def update_metrics() -> None:
 def get_current_metrics() -> dict:
     """
     Get current metrics for logging.
-    Get current metrics for logging.
     Returns:
         dict: Dictionary of current metrics
     """
@@ -92,13 +65,9 @@ def get_current_metrics() -> dict:
 
     speed = articles_processed / (elapsed_time / 60) if elapsed_time > 0 else 0
     processing_time_per_article = 60 / speed if speed > 0 else 0
-    speed = articles_processed / (elapsed_time / 60) if elapsed_time > 0 else 0
-    processing_time_per_article = 60 / speed if speed > 0 else 0
 
     with SessionLocal() as session:
         total_articles = session.query(MediumArticle).count()
-        free_articles = session.query(MediumArticle).filter_by(is_free=True).count()
-        premium_articles = session.query(MediumArticle).filter_by(is_free=False).count()
         free_articles = session.query(MediumArticle).filter_by(is_free=True).count()
         premium_articles = session.query(MediumArticle).filter_by(is_free=False).count()
         free_ratio = free_articles / total_articles if total_articles > 0 else 0
@@ -263,33 +232,34 @@ def process_article(
     url_id, url = url_data
 
     try:
+        log_message(f"Worker {worker_idx} starting to process URL ID {url_id}", "debug")
         context = get_context(browser, with_login)
 
         with context.new_page() as page:
             log_message(f"Processing URL: {url}")
-            log_message(f"Processing URL: {url}")
+            log_message(f"Opening URL with timeout of 20000ms", "debug")
             page.goto(url, wait_until="load", timeout=20000)
             page.wait_for_timeout(random.uniform(500, 2000))
 
             random_mouse_movement(page)
+            log_message(f"Verifying if URL is an article: {url}", "debug")
 
             if not verify_its_an_article(page):
-                log_message(f"URL is not an article: {url}", "warning")
                 log_message(f"URL is not an article: {url}", "warning")
                 update_url_status(session, url_id, "not_article", with_login=with_login)
                 return
 
+            log_message(f"Persisting article data for URL: {url}", "debug")
             persist_article_data(session, url_id, page, with_login)
 
             update_url_status(session, url_id, "success", with_login=with_login)
-            log_message(f"Processed URL: {url}", "success")
             log_message(f"Processed URL: {url}", "success")
 
             update_metrics()
 
     except Exception as e:
         log_message(f"Error processing URL {url}: {str(e)}", "error")
-        log_message(f"Error processing URL {url}: {str(e)}", "error")
+        log_message(f"Exception details: {repr(e)}", "debug")
         update_url_status(session, url_id, "error", str(e), with_login=with_login)
 
 
@@ -309,15 +279,21 @@ def worker_thread(
         shutdown (Event): Event to signal graceful shutdown.
         with_login (bool): Whether to login to Medium.
     """
+    log_message("Worker thread starting", "debug")
+    
     while not shutdown.is_set():
         try:
+            log_message("Waiting for task from queue", "debug")
             task = task_queue.get(timeout=1)
             if task is None:
+                log_message("Received termination signal, stopping worker", "debug")
                 break
 
             url_data, worker_idx = task
+            log_message(f"Got task for URL ID {url_data[0]} assigned to worker {worker_idx}", "debug")
 
             with sync_playwright() as p:
+                log_message("Starting browser", "debug")
                 browser = browser_factory(p)
                 try:
                     with session_factory() as session:
@@ -326,17 +302,18 @@ def worker_thread(
                         )
                 finally:
                     try:
+                        log_message("Closing browser", "debug")
                         browser.close()
                     except Exception as e:
                         log_message(f"Error closing browser: {str(e)}", "error")
-                        log_message(f"Error closing browser: {str(e)}", "error")
 
                 task_queue.task_done()
+                log_message(f"Completed task for URL ID {url_data[0]}", "debug")
 
         except Exception as e:
             if not shutdown.is_set():  # Only log if not shutting down
                 log_message(f"Worker thread error: {str(e)}", "error")
-                log_message(f"Worker thread error: {str(e)}", "error")
+                log_message(f"Stack trace: {repr(e)}", "debug")
 
 
 def main(
@@ -345,6 +322,7 @@ def main(
     url_count: Optional[int] = None,
     with_login: bool = False,
     use_wandb: bool = False,
+    log_level: str = "info",
 ) -> None:
     """Main execution function for processing URLs with worker threads.
 
@@ -353,11 +331,14 @@ def main(
         workers: Number of worker threads
         url_count: Optional number of URLs to process
         with_login: Whether to login to Medium. Requires a login_state.json. Turning this on will scrape ONLY premium articles.
-        use_wandb: Whether to use wandb for logging
-        use_wandb: Whether to use wandb for logging
+        use_wandb: Whether to use wandb for logging metrics
+        log_level: Log verbosity level (error, warning, success, info, debug)
     """
     global start_time, shutdown_event, completed_tasks
-    global start_time, shutdown_event, completed_tasks
+
+    # Set the log level and log the status
+    log_status = set_log_level(log_level)
+    log_message(log_status, "info")
 
     assert not with_login or os.path.exists(
         "login_state.json"
@@ -449,11 +430,6 @@ def main(
                 task_queue.put(((url[0], url[1]), i))
             for _ in range(workers):
                 task_queue.put(None)
-            # Enqueue tasks and termination signals
-            for i, url in enumerate(url_data):
-                task_queue.put(((url[0], url[1]), i))
-            for _ in range(workers):
-                task_queue.put(None)
 
             # Monitor task completion
             last_count = 0
@@ -481,12 +457,8 @@ def main(
 
             if shutdown_event.is_set():
                 log_message("Shutting down gracefully...", "warning")
-            if shutdown_event.is_set():
-                log_message("Shutting down gracefully...", "warning")
 
     except Exception as e:
-        log_message(f"Unhandled error: {str(e)}", "error")
-        console.print_exception(show_locals=True)
         log_message(f"Unhandled error: {str(e)}", "error")
         console.print_exception(show_locals=True)
         raise
@@ -531,6 +503,13 @@ if __name__ == "__main__":
         action="store_true",
         help="Use Weights & Biases for logging metrics",
     )
+    parser.add_argument(
+        "--log_level",
+        type=str,
+        choices=["error", "warning", "success", "info", "debug"],
+        default="info",
+        help="Set logging verbosity level",
+    )
 
     args = parser.parse_args()
 
@@ -540,11 +519,5 @@ if __name__ == "__main__":
         url_count=args.url_count,
         with_login=args.with_login,
         use_wandb=args.use_wandb,
-    )
-    main(
-        headless=args.headless,
-        workers=args.workers,
-        url_count=args.url_count,
-        with_login=args.with_login,
-        use_wandb=args.use_wandb,
+        log_level=args.log_level,
     )

@@ -12,13 +12,41 @@ from playwright.sync_api import Page
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 from rich import print
+from rich.console import Console
 
 from database.database import URL, Author, Comment, MediumArticle, Sitemap, get_session
+from scraper.log_utils import log_message
 
-logging.basicConfig(level=logging.INFO)
+# Initialize logger but don't configure it yet - we'll do that in __main__
 logger = logging.getLogger(__name__)
 
+# Create console for logging
+console = Console()
+log_lock = threading.Lock()
+log_messages: List[str] = []
+
 db_persist_lock = threading.Lock()
+
+
+def log_message(message: str, level: str = "info") -> None:
+    """
+    Add a log message to the display.
+    Args:
+        message (str): Message to log
+        level (str): Log level (info, warning, error, success)
+    """
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    prefixes = {
+        "error": "[red][ERROR][/]",
+        "warning": "[yellow][WARN][/]",
+        "success": "[green][SUCCESS][/]",
+        "info": "[blue][INFO][/]",
+    }
+    prefix = prefixes.get(level, prefixes["info"])
+    
+    with log_lock:
+        log_messages.append(f"[dim]{timestamp}[/] {prefix} {message}")
+        log_messages[:] = log_messages[-30:]
 
 
 def fetch_random_urls(
@@ -64,7 +92,7 @@ def fetch_random_urls(
             .limit(count)
         )
 
-    logger.debug(f"Fetching {count} random URLs from database")
+    log_message(f"Fetching {count} random URLs from database", "debug")
 
     return query.all()
 
@@ -95,12 +123,12 @@ def update_url_status(
                 url.crawl_failure_reason = error
             url.with_login = with_login
             session.commit()
-            logger.debug(
-                f"Updated URL {url_id} status: {success}, with_login: {with_login}"
+            log_message(
+                f"Updated URL {url_id} status: {success}, with_login: {with_login}", "debug"
             )
     except Exception as e:
         session.rollback()
-        logger.error(f"DB error for URL {url_id}: {e}")
+        log_message(f"DB error for URL {url_id}: {e}", "error")
 
 
 def extract_text(page: Page) -> str:
@@ -139,9 +167,37 @@ def click_see_all_responses(page: Page, timeout: int = 1000):
         bool: True if the button was clicked, False otherwise.
     """
     try:
-        page.evaluate("""document.querySelector('button[aria-label="responses"]').click();""")
+        page.evaluate("""
+        () => {
+            const clickButton = () => {
+                const button = document.querySelector('button[aria-label="responses"]');
+                if (button) {
+                    button.click();
+                    return true;
+                }
+                return false;
+            };
+            
+            // Try clicking up to 3 times
+            if (clickButton()) return true;
+            
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    if (clickButton()) resolve(true);
+                    else {
+                        setTimeout(() => {
+                            if (clickButton()) resolve(true);
+                            else resolve(false);
+                        }, 1000);
+                    }
+                }, 1000);
+            });
+        }
+        """)
+        return True
     except Exception as e:
-        logger.debug(f"Failed to click responses button: {e}")
+        log_message(f"Failed to click responses button: {e}", "debug")
+        return False
 
 
 def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
@@ -168,7 +224,7 @@ def scroll_to_load_comments(page: Page, max_scrolls: int = 100) -> None:
                 return
             html = page.content()
         except Exception as e:
-            logger.warning(f"Scroll error on page {page.url}: {e}")
+            log_message(f"Scroll error on page {page.url}: {e}", "warning")
             return
 
 
@@ -182,15 +238,49 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
         List[Dict[str, Any]]: List of dictionaries containing comment data.
     """
     comments = []
-    for el in page.locator("xpath=//pre/ancestor::div[5]").all():
-        if "l" not in el.evaluate(
-            "(el) => el.parentElement.parentElement.classList.value"
-        ):
+    total_elements = 0
+    filtered_elements = 0
+    
+    # Get all potential comment elements
+    elements = page.locator("xpath=//pre/ancestor::div[5]").all()
+    log_message(f"Found {len(elements)} potential comment elements", "debug")
+    
+    for el in elements:
+        log_message(f"Processing comment element {el}", "info")
+        total_elements += 1
+        
+        # Use a more detailed JavaScript to debug the border property
+        debug_info = el.evaluate("""
+        (el) => {
+            const parent = el.parentElement;
+            const parentParent = parent ? parent.parentElement : null;
+            
+            return {
+                selfBorder: window.getComputedStyle(el).borderLeft,
+                parentBorder: parent ? window.getComputedStyle(parent).borderLeft : null,
+                parentParentBorder: parentParent ? window.getComputedStyle(parentParent).borderLeft : null,
+                classes: {
+                    self: el.className,
+                    parent: parent ? parent.className : null,
+                    parentParent: parentParent ? parentParent.className : null
+                }
+            };
+        }
+        """)
+        
+        log_message(f"Element {total_elements} debug info: {debug_info}", "debug")
+        
+        # filter out answer comments
+        border_left = el.evaluate("(el) => window.getComputedStyle(el.parentElement.parentElement).borderLeft")
+        if border_left == "3px solid rgb(242, 242, 242)":
+            log_message(f"Filtered answer comment with border: {border_left}", "debug")
+            filtered_elements += 1
             continue
 
         comment = {
             "references_article": el.locator("p[id^='embedded-quote']").count() > 0,
             "username": None,
+            "user_url": None,
             "text": None,
             "claps": None,
         }
@@ -205,13 +295,11 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
                     if username_match:
                         comment["username"] = f"{username_match.group(1)}"
             except Exception as e:
-                print(e)
+                log_message(f"Error extracting comment author: {e}", "debug")
         else:
-            str = el.inner_html()
-            pattern = r'<p class="be b bf z adl adm adn ado adp adq adr ads bj">(.*?)</p>'
-            matches = re.findall(pattern, str)
-            print(matches)
-
+            user_url_element = el.locator("a").first
+            if "medium.com/" in user_url_element.get_attribute("href"):
+                comment["user_url"] = user_url_element.get_attribute("href").split("?")[0]
         try:
             comment["text"] = el.evaluate(
                 "(el) => el.firstElementChild.firstElementChild.firstElementChild.lastElementChild.previousElementSibling.innerText"
@@ -221,15 +309,18 @@ def extract_comments(page: Page) -> List[Dict[str, Any]]:
                     comment["claps"] = int(claps.inner_text(timeout=500)) or 0
                 except Exception as e:
                     comment["claps"] = 0
-                    logger.debug(f"Failed to parse claps: {e}")
+                    log_message(f"Failed to parse claps: {e}", "debug")
         except Exception as e:
-            logger.debug(f"Error extracting comment text: {e}")
+            log_message(f"Error extracting comment text: {e}", "debug")
             
         if not comment["text"]:
+            log_message("Skipping comment with no text", "debug")
+            filtered_elements += 1
             continue
 
         comments.append(comment)
-        
+    
+    log_message(f"Found {total_elements} total elements, filtered {filtered_elements}, kept {len(comments)} comments", "debug")
     return comments
 
 
@@ -274,9 +365,9 @@ def extract_tags(page: Page) -> List[str]:
                 if tag_text := tag.inner_text().strip():
                     tags.append(tag_text)
             except Exception as e:
-                logger.warning(f"Failed to process tag: {e}")
+                log_message(f"Failed to process tag: {e}", "warning")
     except Exception as e:
-        logger.warning(f"Failed to extract tags: {e}")
+        log_message(f"Failed to extract tags: {e}", "warning")
     return tags
 
 
@@ -316,13 +407,13 @@ def get_or_create_author(
         author = Author(
             id=(session.query(func.max(Author.id)).scalar() or 0) + 1,
             username=username,
-            medium_url=medium_url or f"https://medium.com/{username}",
+            medium_url=medium_url or f"https://medium.com/@{username}",
         )
         session.add(author)
         session.commit()
-        logger.debug(f"Created new author: {author.username} ({author.medium_url})")
+        log_message(f"Created new author: {author.username} ({author.medium_url})", "debug")
     else:
-        logger.debug(f"Found existing author: {author.username} ({author.medium_url})")
+        log_message(f"Found existing author: {author.username} ({author.medium_url})", "debug")
     return author
 
 
@@ -339,7 +430,7 @@ def get_read_time(page: Page) -> Optional[int]:
         if read_time:
             return int(read_time.inner_text().split()[0])
     except Exception as e:
-        logger.debug(f"Error getting read time: {e}")
+        log_message(f"Error getting read time: {e}", "debug")
     return None
 
 
@@ -361,7 +452,7 @@ def get_claps(page: Page) -> Optional[int]:
             else:
                 return int(claps_text.replace(",", "").strip())
         except ValueError:
-            logger.debug("Failed to convert claps text to integer")
+            log_message("Failed to convert claps text to integer", "debug")
             return None
 
 
@@ -381,10 +472,10 @@ def get_comments_count(page: Page) -> Optional[int]:
             comments_count = re.search(r"\d+", comments_text).group(0)
             return int(comments_count)
         except (AttributeError, ValueError):
-            logger.debug("Failed to extract comments count")
+            log_message("Failed to extract comments count", "debug")
             return None
         except ValueError:
-            logger.debug("Failed to convert comments text to integer")
+            log_message("Failed to convert comments text to integer", "debug")
             return None
 
 
@@ -399,7 +490,7 @@ def is_paid_article(page: Page) -> bool:
     try:
         return page.query_selector("article.meteredContent") is not None
     except Exception as e:
-        logger.debug(f"Error checking paid article: {e}")
+        log_message(f"Error checking paid article: {e}", "debug")
         return False
 
 
@@ -419,7 +510,7 @@ def close_overlay(page: Page) -> None:
             """
         )
     except Exception as e:
-        logger.debug(f"Error closing overlay: {e}")
+        log_message(f"Error closing overlay: {e}", "debug")
 
 
 def extract_metadata(page: Page) -> Dict[str, Any]:
@@ -451,7 +542,7 @@ def extract_metadata(page: Page) -> Dict[str, Any]:
             "title": json_data.get("headline"),
         }
     else:
-        logger.warning("No metadata script found on the page.")
+        log_message("No metadata script found on the page.", "warning")
         return {}
 
     return article_data
@@ -464,11 +555,13 @@ def persist_article_data(
     with_login: bool,
     insert_recc: bool = False,
 ) -> bool:
+    
+    page.wait_for_load_state("networkidle")
 
-    if not with_login:
-        click_see_all_responses(page)
-        scroll_to_load_comments(page)
-        comments = extract_comments(page)
+    click_see_all_responses(page)
+    scroll_to_load_comments(page)
+    page.wait_for_timeout(500)
+    comments = extract_comments(page)
 
     close_overlay(page)
 
@@ -495,7 +588,7 @@ def persist_article_data(
             )
 
             if not author:
-                logger.warning("No author found for the article.")
+                log_message("No author found for the article.", "warning")
 
             article = (
                 session.query(MediumArticle)
@@ -533,11 +626,14 @@ def persist_article_data(
             if with_login:
                 return True
 
+            log_message(f"Found {len(comments)} comments", "info")
+
             if comments:
                 for comment in comments:
                     author = get_or_create_author(
                         session,
                         comment.get("username"),
+                        comment.get("user_url"),
                     )
                     if (
                         session.query(Comment)
@@ -553,7 +649,6 @@ def persist_article_data(
                             article_id=article.id,
                             author_id=author.id if author else None,
                             text=comment.get("text"),
-                            full_text=comment.get("full_html_text"),
                             claps=comment.get("claps"),
                             references_article=comment.get("references_article"),
                         )
@@ -562,7 +657,7 @@ def persist_article_data(
                         session.flush()
                     except Exception as e:
                         session.rollback()
-                        logger.error(f"Failed to persist comment: {e}")
+                        log_message(f"Failed to persist comment: {e}", "error")
                         continue
 
             if insert_recc:
@@ -584,7 +679,7 @@ def persist_article_data(
 
         except Exception as e:
             session.rollback()
-            logger.error(f"Failed to persist article data: {e}", exc_info=True)
+            log_message(f"Failed to persist article data: {e}", "error")
             return False
 
 
@@ -599,7 +694,7 @@ def verify_its_an_article(page: Page) -> bool:
     try:
         return page.query_selector("span[data-testid='storyReadTime']") is not None
     except Exception as e:
-        logger.debug(f"Error verifying article: {e}")
+        log_message(f"Error verifying article: {e}", "debug")
         return False
 
 
@@ -621,6 +716,15 @@ if __name__ == "__main__":
     import time
     from playwright.sync_api import sync_playwright
     
+    # Configure the logger for more detailed output
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        handlers=[
+            logging.StreamHandler()
+        ]
+    )
+    
     # Set up a simple shutdown event for testing
     test_shutdown_event = threading.Event()
     
@@ -639,8 +743,8 @@ if __name__ == "__main__":
         
         try:
             # Navigate to the test article
-            url = "https://medium.com/@maxim-gorin/stop-writing-if-else-trees-use-the-state-pattern-instead-1fe9ff39a39c"
-            print(f"Navigating to {url} on mobile browser")
+            url = "https://blog.startupstash.com/the-uks-financial-system-will-crash-in-2023-but-they-don-t-want-you-to-know-4c84d8c72fb0"
+            log_message(f"Navigating to {url} on mobile browser", "info")
             page.goto(url)
             
             # Wait for the page to load
@@ -648,34 +752,36 @@ if __name__ == "__main__":
             
             # Verify it's an article
             if not verify_its_an_article(page):
-                print("This page is not a Medium article")
+                log_message("This page is not a Medium article", "error")
                 browser.close()
                 exit(1)
                 
-            # wait 2 seconds
-            page.wait_for_timeout(2000)
-            
             close_overlay(page)
             
             # Try to click on the responses button to show comments
-            print("Attempting to load comments...")
+            log_message("Attempting to load comments...", "info")
             click_see_all_responses(page)
             
             # Scroll to load all comments
-            print("Scrolling to load all comments...")
-            scroll_to_load_comments(page, 1)
+            log_message("Scrolling to load all comments...", "info")
+            scroll_to_load_comments(page, 10)
+            
+            page.wait_for_timeout(1000)
             
             # Extract comments
-            print("Extracting comments...")
+            log_message("Extracting comments...", "info")
             comments = extract_comments(page)
             
+            for comment in comments:
+                if not (comment.get("username") or comment.get("user_url")):
+                    log_message(f"Comment without author information: {comment}", "warning")
+                    
+            log_message(f"Found {len(comments)} comments in total", "info")
             print(comments)
-            
-            print(len(comments))
         
         except Exception as e:
-            print(f"Error during test: {e}")
+            log_message(f"Error during test: {e}", "error")
         
         finally:
-            print("\nClosing browser...")
+            log_message("Closing browser...", "info")
             browser.close()
