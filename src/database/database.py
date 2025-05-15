@@ -132,7 +132,6 @@ class Comment(Base):
     article_id = Column(Integer, ForeignKey("medium_articles.id"))
     author_id = Column(Integer, ForeignKey("authors.id"), nullable=True)
     text = Column(Text, nullable=True)
-    full_text = Column(Text, nullable=False)
     claps = Column(SmallInteger, nullable=True)
     references_article = Column(Boolean, nullable=False)
     author = relationship("Author", back_populates="comments")
