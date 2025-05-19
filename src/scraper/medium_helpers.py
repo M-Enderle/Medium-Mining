@@ -325,6 +325,9 @@ def get_or_create_author(
     if username:
         username = username.strip("@")
 
+    if medium_url and not medium_url.startswith("https://"):
+        medium_url = f"https://medium.com/@{medium_url.strip('/').strip('@')}"
+
     author = (
         session.query(Author)
         .filter(
