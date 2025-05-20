@@ -9,6 +9,7 @@ login_state.json
 .DS_Store
 */.DS_Store
 wandb
+notebooks/runs
 
 # notebooks we actually want to keep
 !notebooks/topic_modeling.ipynb

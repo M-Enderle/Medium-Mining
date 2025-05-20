@@ -36,6 +36,10 @@ bertopic = "^0.17.0"
 wrapt = "^1.17.2"
 tf-keras = "^2.19.0"
 transformers = "^4.51.3"
+tensorboard = "^2.19.0"
+text-preprocessing = "^0.1.1"
+spacy = "^3.8.6"
+fast-langdetect = "^0.3.2"
 
 
 [tool.poetry.group.dev.dependencies]
