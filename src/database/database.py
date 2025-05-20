@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
 
-DATABASE_URL = "duckdb:///md:Medium_Articles_New"  # Persistent storage
+DATABASE_URL = "duckdb:///md:Medium"  # Persistent storage
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -60,10 +60,8 @@ class URL(Base):
     last_crawled = Column(DateTime, nullable=True)
     crawl_status = Column(String(12), nullable=True)
     crawl_failure_reason = Column(String(255), nullable=True)
-    found_on_url_id = Column(Integer, ForeignKey("urls.id"), nullable=True)
     with_login = Column(Boolean, nullable=True, default=False)
 
-    found_on_url = relationship("URL", remote_side=[id], backref="found_urls")
     sitemap = relationship("Sitemap", back_populates="urls")
     article = relationship("MediumArticle", back_populates="url")
 
@@ -150,3 +148,7 @@ def setup_database():
         print("Database and tables created successfully.")
     except Exception as e:
         print(f"Error creating database: {e}")
+
+
+if __name__ == "__main__":
+    setup_database()

@@ -51,7 +51,6 @@ def fetch_random_urls(
             .filter(
                 URL.last_crawled.is_(None),
             )
-            # .order_by(URL.priority.desc())
             .limit(count)
         )
     else:
@@ -62,7 +61,6 @@ def fetch_random_urls(
             .filter(Sitemap.sitemap_url.like("%/posts/%"))
             .filter(MediumArticle.is_free.is_(False))
             .filter(URL.with_login.is_(False))
-            # .order_by(URL.priority.desc())
             .limit(count)
         )
 
@@ -497,10 +495,11 @@ def persist_article_data(
     recc = extract_recommendation_urls(page)
     num_images = count_images(full_text)
 
-    click_see_all_responses(page)
-    scroll_to_load_comments(page)
-    page.wait_for_timeout(500)
-    comments = extract_comments(page)
+    if not with_login:
+        click_see_all_responses(page)
+        scroll_to_load_comments(page)
+        page.wait_for_timeout(500)
+        comments = extract_comments(page)
 
     with db_persist_lock:
         try:
@@ -520,10 +519,10 @@ def persist_article_data(
                 .first()
             )
             if article:
+                # Update article with individual statements
                 article.full_article_text = full_text
-                article.claps = claps
-                article.comments_count = comments_count
                 article.num_images = num_images
+                article.tags = tags
             else:
                 article = MediumArticle(
                     url_id=url_id,
@@ -644,12 +643,13 @@ if __name__ == "__main__":
             viewport=mobile_viewport,
             user_agent=mobile_user_agent,
             device_scale_factor=2.0,
+            storage_state="login_state.json"
         )
         page = context.new_page()
 
         try:
             # Navigate to the test article
-            url = "https://medium.com/coinmonks/1k-to-10k-crypto-challenge-week-4-massive-portfolio-changes-6bafb07c7f61"
+            url = "https://medium.com/gitconnected/mocking-outbound-http-calls-in-golang-net-http-httptest-bc5629cd3c3e"
             log_message(f"Navigating to {url} on mobile browser", "info")
             page.goto(url)
 
@@ -664,32 +664,13 @@ if __name__ == "__main__":
 
             close_overlay(page)
 
-            # Try to click on the responses button to show comments
-            log_message("Attempting to load comments...", "info")
-            click_see_all_responses(page)
+            # get tags
+            tags = extract_tags(page)
+            print(f"Tags: {tags}", "info")
 
-            # Scroll to load all comments
-            log_message("Scrolling to load all comments...", "info")
-            scroll_to_load_comments(page, 10)
-
-            page.wait_for_timeout(1000)
-
-            # Extract comments
-            log_message("Extracting comments...", "info")
-            comments = extract_comments(page)
-
-            for comment in comments:
-                if not (comment.get("username") or comment.get("user_url")):
-                    log_message(
-                        f"Comment without author information: {comment}", "warning"
-                    )
-
-            log_message(f"Found {len(comments)} comments in total", "info")
-            for i, comment in enumerate(comments):
-                log_message(f"Comment {i+1}: {comment.get('text')[:100]}...", "info")
 
         except Exception as e:
-            log_message(f"Error during test: {e}", "error")
+            print(f"Error during test: {e}", "error")
 
         finally:
             log_message("Closing browser...", "info")
