@@ -10,6 +10,9 @@ login_state.json
 */.DS_Store
 wandb
 
+# notebooks we actually want to keep
+!notebooks/topic_modeling.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
