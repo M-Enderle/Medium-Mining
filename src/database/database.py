@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy.sql import func
 
-DATABASE_URL = "duckdb:///md:Medium"  # Persistent storage
+DATABASE_URL = "duckdb:///md:Medium-Final"  # Persistent storage
 Base = declarative_base()
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
