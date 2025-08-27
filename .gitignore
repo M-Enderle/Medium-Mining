@@ -1,6 +1,5 @@
 # Custom Ignores
 *.db
-*.ipynb
 screenshots
 CLAUDE.md
 .duckdb
