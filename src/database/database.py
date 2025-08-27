@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    VARCHAR,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -109,6 +110,7 @@ class MediumArticle(Base):
     read_time = Column(SmallInteger, nullable=True)
     type = Column(String(50), nullable=True)
     num_images = Column(SmallInteger, nullable=True)
+    language = Column(VARCHAR(5), nullable=True)
 
     tags = Column(ARRAY(String), nullable=True)
     author = relationship("Author", back_populates="articles")
