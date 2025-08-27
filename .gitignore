@@ -181,9 +181,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-.ipynb
 screenshots
 *.duckdb
 *.walmedium_articles_full.duckdb
 .python-version
 .DS_Store
+**.tsv
+
