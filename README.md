@@ -54,7 +54,7 @@ poetry run python src/scraper/scrape_sitemaps.py
 To scrape detailed content and metadata from Medium articles, run the following command:
 
 ```bash
-poetry run python src/scraper/scrape_articles.py --url_count <number_of_urls> --workers <number_of_workers> --headless --with_login
+poetry run python src/scraper/scrape_articles.py --url_count 5000 --workers 5 --headless
 ```
 
 - `--url_count`: Number of URLs to process (default: 100)

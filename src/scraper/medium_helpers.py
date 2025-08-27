@@ -69,6 +69,47 @@ def fetch_random_urls(
     return query.all()
 
 
+def fetch_failed_urls(
+    session: Session, count: Optional[int], with_login: bool
+) -> List[Tuple[int, str]]:
+    """
+    Fetch previously failed URLs for retry.
+
+    Args:
+        session (Session): SQLAlchemy session.
+        count (Optional[int]): Max number of URLs to fetch.
+        with_login (bool): Retry failures from login or non-login runs.
+    Returns:
+        List[Tuple[int, str]]: URL ID and URL pairs.
+    """
+
+    if not with_login:
+        query = (
+            session.query(URL.id, URL.url)
+            .join(URL.sitemap)
+            .filter(Sitemap.sitemap_url.like("%/posts/%"))
+            .filter(URL.crawl_status.isnot(None))
+            .filter(URL.crawl_status != "success")
+            .filter((URL.with_login.is_(False)) | (URL.with_login.is_(None)))
+            .limit(count)
+        )
+    else:
+        query = (
+            session.query(URL.id, URL.url)
+            .join(URL.sitemap)
+            .join(URL.article)
+            .filter(Sitemap.sitemap_url.like("%/posts/%"))
+            .filter(MediumArticle.is_free.is_(False))
+            .filter(URL.crawl_status.isnot(None))
+            .filter(URL.crawl_status != "success")
+            .filter(URL.with_login.is_(True))
+            .limit(count)
+        )
+
+    log_message(f"Fetching {count or 'all'} failed URLs for retry", "info")
+    return query.all()
+
+
 def update_url_status(
     session: Session,
     url_id: int,

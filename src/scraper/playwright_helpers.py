@@ -198,3 +198,42 @@ def verify_its_an_article(page: Page) -> bool:
     except Exception as e:
         log_message(f"Error verifying article: {e}", "debug")
         return False
+
+
+def perform_interactive_login(storage_path: str = "login_state.json") -> None:
+    """
+    Open a visible browser window for manual Medium login and save storage state.
+
+    Args:
+        storage_path (str): Path to save the storage/cookies JSON.
+    """
+    try:
+        from playwright.sync_api import sync_playwright  # local import to avoid global dependency
+
+        log_message(
+            "Launching browser for interactive Medium login. Login, then return here and press Enter.",
+            "info",
+        )
+        with sync_playwright() as p:
+            browser = create_browser(p, headless=False)
+            context = browser.new_context()
+            page = context.new_page()
+            try:
+                page.goto("https://medium.com/m/signin", wait_until="load", timeout=30000)
+            except Exception as e:
+                log_message(f"Failed to open Medium sign-in page: {e}", "warning")
+
+            try:
+                input("After completing login in the opened browser, press Enter here to continue...")
+            except EOFError:
+                # In case stdin is not interactive; give the user some time
+                log_message("Non-interactive terminal detected; waiting 30s before saving state.", "warning")
+                page.wait_for_timeout(30000)
+
+            try:
+                context.storage_state(path=storage_path)
+                log_message(f"Saved login storage state to: {storage_path}", "success")
+            finally:
+                browser.close()
+    except Exception as e:
+        log_message(f"Interactive login failed: {e}", "error")

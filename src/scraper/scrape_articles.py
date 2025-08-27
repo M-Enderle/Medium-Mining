@@ -28,6 +28,7 @@ from database.database import URL, MediumArticle, SessionLocal
 from scraper.log_utils import log_lock, log_message, log_messages, set_log_level
 from scraper.medium_helpers import (
     fetch_random_urls,
+    fetch_failed_urls,
     persist_article_data,
     setup_signal_handlers,
     update_url_status,
@@ -37,6 +38,7 @@ from scraper.playwright_helpers import (
     get_context,
     random_mouse_movement,
     verify_its_an_article,
+    perform_interactive_login,
 )
 
 # Set up rich console and traceback
@@ -294,6 +296,7 @@ def main(
     with_login: bool = False,
     use_wandb: bool = False,
     log_level: str = "info",
+    retry_failed: bool = False,
 ) -> None:
     """Main execution function for processing URLs with worker threads.
 
@@ -311,9 +314,16 @@ def main(
     log_status = set_log_level(log_level)
     log_message(log_status, "info")
 
-    assert not with_login or os.path.exists(
-        "login_state.json"
-    ), "Login state file not found. Please create a login_state.json file."
+    if with_login and not os.path.exists("login_state.json"):
+        log_message(
+            "with_login enabled but no login_state.json found. Starting interactive login...",
+            "warning",
+        )
+        perform_interactive_login("login_state.json")
+        if not os.path.exists("login_state.json"):
+            raise AssertionError(
+                "Login state file not created. Aborting. Rerun with --with_login to retry."
+            )
 
     # Initialize wandb if enabled
     if use_wandb and WANDB_AVAILABLE:
@@ -350,7 +360,10 @@ def main(
 
         # Fetch URLs with proper session management
         with session_factory() as session:
-            url_data = fetch_random_urls(session, url_count, with_login)
+            if retry_failed:
+                url_data = fetch_failed_urls(session, url_count, with_login)
+            else:
+                url_data = fetch_random_urls(session, url_count, with_login)
 
         total_urls = len(url_data)
         log_message(
@@ -476,6 +489,11 @@ if __name__ == "__main__":
         help="Login to Medium. Requires a login_state.json.",
     )
     parser.add_argument(
+        "--retry_failed",
+        action="store_true",
+        help="Retry URLs that previously failed instead of new ones",
+    )
+    parser.add_argument(
         "--use_wandb",
         action="store_true",
         help="Use Weights & Biases for logging metrics",
@@ -497,4 +515,5 @@ if __name__ == "__main__":
         with_login=args.with_login,
         use_wandb=args.use_wandb,
         log_level=args.log_level,
+        retry_failed=args.retry_failed,
     )
