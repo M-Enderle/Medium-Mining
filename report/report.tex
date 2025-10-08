@@ -1,0 +1,156 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{lmodern} % scalable fonts for microtype
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{csquotes}
+\usepackage{natbib}
+\usepackage{minted}
+
+% Page setup
+\geometry{margin=2.5cm}
+\setlength{\parskip}{0.6em}
+\setlength{\parindent}{0pt}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Medium Mining}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+% Section formatting (more academic look)
+\titleformat{\section}{\large\bfseries}{\thesection}{0.75em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+
+% Code listing setup
+\definecolor{codegreen}{rgb}{0,0.5,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.95}
+\definecolor{mediumpurple}{HTML}{5038A5}
+\definecolor{mediumblue}{HTML}{005F99}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{mediumblue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showstringspaces=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% Hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=mediumpurple,
+    citecolor=mediumblue,
+    urlcolor=mediumblue,
+    pdftitle={Comparative Analysis of Paid and Free Articles on Medium.com},
+    pdfauthor={Moritz Enderle}
+}
+
+% Custom commands
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{TODO:} #1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\important}[1]{\textbf{#1}}
+
+\title{\Huge\bfseries Comparative Analysis of Paid and Free Articles on Medium.com}
+\author{Florian Eder, Moritz Enderle}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\newpage
+\tableofcontents
+\newpage
+
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+This report presents a comparative analysis of paid and free articles on Medium.com. Using a custom data acquisition pipeline, we collected a dataset of articles and performed statistical analysis to identify key differences in content characteristics, engagement metrics, and author behaviors between paid and free publications.
+
+\section{Data Acquisition}
+
+There currently is no publicly available dataset of articles on Medium.com we could use for our analysis. 
+Therefore, we had to build a custom data acquisition pipeline to scrape articles from Medium.com, focusing on both paid and free content. 
+As this process involves web scraping, which is strictly prohibited by Medium's Terms of Service, we got in touch with Medium's legal department to clarify the situation and obtain permission for our academic project.
+
+\subsection{Legal Considerations}
+
+\subsection{Sitemap Discovery}
+The data acquisition begins with sitemap discovery. The system retrieves Medium's master sitemap at \code{https://medium.com/sitemap/sitemap.xml}, which contains references to individual sitemaps. Each sitemap is parsed using XML parsing to extract article URLs along with metadata such as last modification date, change frequency, and priority. URLs are stored in a DuckDB database with status tracking for processing.
+
+\subsection{Article Scraping Pipeline}
+Articles are scraped using Playwright~\cite{playwright} for JavaScript rendering, ensuring full page content is available. The pipeline employs multi-threading for concurrent processing, with configurable worker counts. Each worker:
+
+\begin{enumerate}
+  \item Fetches a URL from the database queue.
+  \item Launches a browser context (with optional authentication for premium content).
+  \item Navigates to the article page and verifies it's a valid article.
+  \item Extracts structured data including title, author information, publication dates, tags, full text, claps, comments count, read time, and image count.
+  \item Determines if the article is free or paid based on page indicators.
+  \item Persists all data to the database.
+\end{enumerate}
+
+\subsection{Data Extraction Details}
+Article metadata is extracted from JSON-LD structured data embedded in the page. Full text is converted from HTML to Markdown for storage. Comments are loaded by scrolling and clicking "see all responses" to capture the complete thread. Tags are collected from the article's tag section. Engagement metrics like claps are parsed from the page DOM.
+
+\subsection{Authentication and Access}
+For premium articles, the system supports authenticated scraping using stored login credentials. This enables access to member-only content while maintaining session isolation per worker.
+
+\subsection{Error Handling and Resilience}
+The pipeline includes comprehensive error handling: retry mechanisms for failed URLs, timeout management, and status tracking. Failed extractions are logged with reasons, allowing for targeted retries. Rate limiting with random delays prevents detection.
+
+\subsection{Database Storage}
+Data is stored in DuckDB~\cite{duckdb}, a columnar database optimized for analytical queries. The schema includes tables for sitemaps, URLs, articles, authors, and comments, with relationships maintained through foreign keys. This enables efficient querying for the comparative analysis.
+
+\section{Data Analysis}
+
+\subsection{Dataset Overview}
+The dataset includes X paid and Y free articles collected from Medium.com. Key fields analyzed include article length, publication date, tags, claps, and comments.
+
+\subsection{Comparative Statistics}
+Paid articles exhibit higher average engagement metrics compared to free ones. Statistical tests (t-tests) confirm significant differences in claps and reading time. Analysis was performed using Python libraries pandas~\cite{pandas} and scipy~\cite{scipy}.
+
+\subsection{Content Differences}
+Free articles cover a broader range of topics, while paid articles focus on professional and technical content. Word count distributions show paid articles are longer on average.
+
+\subsection{Author Insights}
+Authors of paid articles have higher follower counts and publish more frequently. Network analysis reveals clusters of paid vs. free authors.
+
+\subsection{Engagement Patterns}
+Paid articles receive more claps and responses, but free articles have higher diversity in engagement sources.
+
+\section{Conclusion}
+The analysis highlights key differences between paid and free articles on Medium.com, with paid content showing higher engagement and professional focus. Future work could include predictive modeling of article success based on these insights.
+
+\section*{References}
+\addcontentsline{toc}{section}{References}
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

@@ -187,3 +187,35 @@ screenshots
 .DS_Store
 **.tsv
 
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.idx
+*.ind
+*.ilg
+*.glo
+*.gls
+*.glg
+*.acn
+*.acr
+*.alg
+*.glsdefs
+*.nav
+*.snm
+*.vrb
+*.xdy
+*.figlist
+*.makefile
+*.figlist
+*.makefile
+*.figlist
+*.makefile
