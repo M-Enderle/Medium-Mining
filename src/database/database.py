@@ -111,6 +111,7 @@ class MediumArticle(Base):
     type = Column(String(50), nullable=True)
     num_images = Column(SmallInteger, nullable=True)
     language = Column(VARCHAR(5), nullable=True)
+    readability_score = Column(Integer, nullable=True)
 
     tags = Column(ARRAY(String), nullable=True)
     author = relationship("Author", back_populates="articles")
