@@ -241,19 +241,19 @@ The results of the t-tests, presented in Table \ref{tab:t_test_results}, reveal 
 
 \todo{maybe extend this part?}
 
-\subsection{Topic Modeling}
+\section{Topic Modeling}
 
 \subsubsection{Introduction}
 
 Topic modeling using embeddings represents a modern approach to uncovering thematic structures in text data, leveraging dense vector representations to capture semantic similarities. Unlike traditional methods like Latent Dirichlet Allocation (LDA), embedding-based techniques utilize pre-trained language models to generate contextual embeddings, allowing for more nuanced topic discovery that accounts for word polysemy and context.
 
-In our analysis of Medium.com articles, we employ embedding-based topic modeling to compare thematic distributions between paid and free content. This method enables us to identify clusters of semantically similar articles and assess whether premium content exhibits distinct topical patterns compared to free articles.
+In our analysis of Medium.com articles, we use embedding-based topic modeling to compare thematic distributions between paid and free content. This method enables us to identify clusters of semantically similar articles and assess whether certain topics offer a higher propensity for paid content.
 
-\subsubsection{Data Preprocessing}
+\subsubsection{Data Preprocessing \& Generation of Embeddings}
 
-Preprocessing for embedding-based topic modeling involves standard text cleaning steps followed by embedding generation. We tokenize the article text, remove stopwords, and apply lemmatization to normalize the vocabulary. Short or low-quality articles are filtered out to ensure meaningful embeddings.
+Preprocessing for embedding-based models is not as intensive as for traditional models, as embeddings inherently capture semantic relationships. However, the scraped content was saved in a markdown format, which included various non-textual elements such as images, code snippets, and formatting syntax. To ensure the quality of the text data used for topic modeling, we implemented a preprocessing pipeline which removed these non-textual elements, retaining only the core textual content of each article. This step was crucial to prevent noise from affecting the embedding generation and subsequent topic modeling.
 
-\todo{Detail the embedding model used (e.g., Sentence-BERT), preprocessing specifics, and any dimensionality reduction techniques applied to the embeddings.}
+For generating embeddings, we utilized the \code{prdev/mini-gte} model developed by QTACK \cite{minigte} in 
 
 \subsubsection{Methodology}
 
@@ -266,8 +266,6 @@ We utilize BERTopic, a topic modeling framework that combines transformer-based 
 \end{enumerate}
 
 \todo{Describe hyperparameters (e.g., embedding model, clustering parameters), training process, and evaluation metrics used for topic quality assessment.}
-
-\subsubsection{Results}
 
 \subsubsection{Results}
 
@@ -334,12 +332,13 @@ The embedding-based topic modeling highlights \todo{insights into thematic diffe
 
 \todo{Discuss the advantages of embedding-based approaches over traditional methods, implications for content monetization, and limitations such as computational requirements or interpretability challenges.}
 
-
 \section{AI Generated Content}
-
 
 \section{Conclusion}
 
 \todo{}
+
+\bibliographystyle{plain}
+\bibliography{references}
 
 \end{document}
