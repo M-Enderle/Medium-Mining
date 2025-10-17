@@ -8,6 +8,7 @@ login_state.json
 .DS_Store
 */.DS_Store
 wandb
+venv_linux
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

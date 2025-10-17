@@ -269,6 +269,61 @@ We utilize BERTopic, a topic modeling framework that combines transformer-based 
 
 \subsubsection{Results}
 
+\subsubsection{Results}
+
+The embedding-based topic modeling using BERTopic identified 26 distinct topics across the dataset. We analyzed the proportion of paid articles within each topic and performed two-sample t-tests to assess if these proportions differ significantly from the overall paid proportion (33.6\%).
+
+Table \ref{tab:topic_proportions} summarizes the mean proportion of paid articles per topic, along with t-statistics and p-values. Significant differences (p < 0.05) indicate over- or under-representation of paid content.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/2D_Cluster_Free_Paid_Ratio.png}
+    \caption{2D visualization of topic clusters showing free-to-paid article ratios. Color gradient (red to green) indicates free article proportion: red for lower free ratios (more paid), green for higher.}
+    \label{fig:2d_clusters}
+\end{figure}
+
+\begin{table}[H]
+    \centering
+    \caption{Proportion of Paid Articles per Topic with Cluster Size and T-Test Results}
+    \label{tab:topic_proportions}
+    \begin{tabular}{lrrrr}
+        \toprule
+        \textbf{Topic} & \textbf{Size} & \textbf{Mean} & \textbf{t-statistic} & \textbf{p-value} \\
+        \midrule
+        DeFi \& Crypto & \textbf{1523} & \textbf{0.864} & \textbf{24.065} & \textbf{0.000} \\
+        Cybersecurity Techniques & \textbf{579} & \textbf{0.737} & \textbf{4.633} & \textbf{0.000} \\
+        Sports \& Achievements & 162 & 0.710 & 1.599 & 0.112 \\
+        DevOps \& Cloud Automation & \textbf{1014} & \textbf{0.708} & \textbf{3.878} & \textbf{0.000} \\
+        Performance \& Architecture & 379 & 0.673 & 0.834 & 0.405 \\
+        Data Engineering Patterns & 424 & 0.665 & 0.540 & 0.589 \\
+        Startup Insights & 393 & 0.654 & 0.052 & 0.958 \\
+        App Development Techniques & 1087 & 0.649 & -0.221 & 0.825 \\
+        Tech Strategy & 603 & 0.632 & -1.061 & 0.289 \\
+        AI \& Data Guides & \textbf{1971} & \textbf{0.551} & \textbf{-9.075} & \textbf{0.000} \\
+        Software Development Practices & \textbf{611} & \textbf{0.489} & \textbf{-8.070} & \textbf{0.000} \\
+        Environmental Innovations & \textbf{204} & \textbf{0.446} & \textbf{-5.922} & \textbf{0.000} \\
+        Financial Trading Insights & \textbf{153} & \textbf{0.392} & \textbf{-6.579} & \textbf{0.000} \\
+        Diverse Interests Showcase & \textbf{337} & \textbf{0.383} & \textbf{-10.178} & \textbf{0.000} \\
+        Digital Entrepreneurship Insights & \textbf{631} & \textbf{0.379} & \textbf{-14.174} & \textbf{0.000} \\
+        Tech \& How-Tos & \textbf{257} & \textbf{0.346} & \textbf{-10.303} & \textbf{0.000} \\
+        Identity and Society & \textbf{284} & \textbf{0.324} & \textbf{-11.818} & \textbf{0.000} \\
+        Culture \& Entertainment Deep Dive & \textbf{311} & \textbf{0.318} & \textbf{-12.638} & \textbf{0.000} \\
+        Life's Unforeseen Journeys & \textbf{304} & \textbf{0.309} & \textbf{-12.937} & \textbf{0.000} \\
+        Global Politics \& Media & \textbf{348} & \textbf{0.296} & \textbf{-14.557} & \textbf{0.000} \\
+        Personal Growth Insights & \textbf{691} & \textbf{0.276} & \textbf{-22.101} & \textbf{0.000} \\
+        Personal Growth Strategies & \textbf{100} & \textbf{0.260} & \textbf{-8.908} & \textbf{0.000} \\
+        Geopolitics and Technology & \textbf{170} & \textbf{0.259} & \textbf{-11.690} & \textbf{0.000} \\
+        Lifestyle \& Wellness Hacks & \textbf{384} & \textbf{0.253} & \textbf{-18.020} & \textbf{0.000} \\
+        Creative Writing Insights & \textbf{201} & \textbf{0.229} & \textbf{-14.268} & \textbf{0.000} \\
+        Relationship Dynamics and Life Events & \textbf{1266} & \textbf{0.177} & \textbf{-44.341} & \textbf{0.000} \\
+        Human Stories \& Injustice & \textbf{195} & \textbf{0.133} & \textbf{-21.280} & \textbf{0.000} \\
+        Narcissistic Abuse Dynamics & \textbf{152} & \textbf{0.125} & \textbf{-19.607} & \textbf{0.000} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\todo{Include visualizations like topic embeddings in 2D space, topic-word clouds, and comparative topic prevalence charts between paid and free content.}
+
 The embedding-based model identified \todo{insert number} topics across the dataset. Topic distributions revealed \todo{key findings, such as prevalent topics in paid vs. free articles and semantic similarities}.
 
 \todo{Include visualizations like topic embeddings in 2D space, topic-word clouds, and comparative topic prevalence charts between paid and free content.}
@@ -280,12 +335,11 @@ The embedding-based topic modeling highlights \todo{insights into thematic diffe
 \todo{Discuss the advantages of embedding-based approaches over traditional methods, implications for content monetization, and limitations such as computational requirements or interpretability challenges.}
 
 
+\section{AI Generated Content}
+
 
 \section{Conclusion}
 
 \todo{}
-
-\bibliographystyle{plain}
-\bibliography{references}
 
 \end{document}
