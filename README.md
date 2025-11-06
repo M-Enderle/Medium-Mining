@@ -83,7 +83,7 @@ The project uses SQLAlchemy with the following main models:
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.12+
 - Dependencies managed through Poetry
 
 ## License
