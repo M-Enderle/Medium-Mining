@@ -220,3 +220,5 @@ screenshots
 *.makefile
 *.figlist
 *.makefile
+
+.vscode/
