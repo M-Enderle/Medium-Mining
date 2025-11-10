@@ -1,0 +1,38 @@
+\section{Data Acquisition}
+
+There is currently no publicly available dataset of articles on Medium.com suitable for our analysis for our analysis. 
+The platform also does not provide an official API for data access.
+Therefore, we had to build a custom data acquisition pipeline to scrape articles from Medium.com, focusing on both paid and free content.
+
+\subsection{Legal Considerations}
+
+As this process involves web scraping, which is strictly prohibited by Medium's Terms of Service \cite{medium_rules_2023}, we got in touch with Medium's legal department to clarify the situation and obtain permission for our academic project.
+
+Although we received permission to proceed, we ensured our scraping methodology does not overload or negatively impact Medium's services.
+
+All collected data was used exclusively for academic research purposes and will not be redistributed or commercialized.
+
+\subsection{Page Discovery}
+
+Traditional content discovery methods are mostly based around spiders crawling links from one page to another. However, this approach would introduce a significant bias, as most articles on Medium.com are linked only to other articles within the same field (e.g. technology articles link to other technology articles). This would lead to a dataset that is not representative of the overall article distribution on Medium.com.
+
+This led us to discover Medium's sitemaps as a more suitable approach for page discovery. The main sitemap is located at \code{https://medium.com/sitemap/sitemap.xml} and contains references to 20440 individual sitemaps, each containing up to 7000 URLs, which totaled 32 million URLs [as of March 2025]. We completed the whole process over 6 hours with a Gaussian distributed delay with mean 0.05 seconds. From these URLs, we were able to filter out a portion of non-article URLs (e.g. user profiles, tag pages, etc.).
+This finally resulted in 14702 individual sitemaps and a total of just over 30 Million URLs.
+
+\subsection{Scraping the Articles}
+
+The articles on Medium.com are dynamically loaded using JavaScript, which means a simple HTTP request to fetch the HTML content is not sufficient. To overcome this issue, we employed playwright to fully render the pages before extracting the relevant data. Due to the high number of articles to be scraped, we parallelized the process using multiple worker processes. Each worker was designed to operate independently, fetching URLs from the database, rendering the pages, and extracting the relevant data.
+
+For member-only (paid) articles, we implemented a method to access the full content by purchasing the Medium membership and using the associated cookies during scraping. 
+
+\subsection{Database Storage}
+
+We stored data in DuckDB, a columnar database optimized for analytical queries \cite{duckdb_2025}. We designed the schema to include tables for sitemaps, URLs, articles, authors, and comments, with relationships maintained through foreign keys. The database schema is shown in Figure~\ref{fig:er_diagram}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\textwidth]{images/ER.png}
+    \label{fig:database_schema}
+    \caption{Entity-relationship diagram of the scraping data model.}
+    \label{fig:er_diagram}
+\end{figure}

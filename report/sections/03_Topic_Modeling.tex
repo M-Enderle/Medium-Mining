@@ -1,0 +1,73 @@
+\section{Topic Modeling}
+
+Topic modeling using embeddings represents a modern approach to uncovering thematic structures in text data, leveraging dense vector representations to capture semantic similarities. Unlike traditional methods like Latent Dirichlet Allocation (LDA) \cite{jelodar2018latentdirichletallocationlda}, embedding-based techniques utilize pre-trained language models to generate contextual embeddings, allowing for context-based similarity search rather than solely relying on independent words \cite{tacl_a_00325}.
+
+In our analysis of Medium.com articles, we used embedding-based topic modeling to compare thematic distributions between paid and free content. This method also enabled us to identify clusters of semantically similar articles and assess whether certain topics offer a higher propensity for paid content.
+
+\subsection{Data Preprocessing \& Generation of Embeddings}
+
+To ensure the quality of the text data used for topic modeling, we implemented a preprocessing pipeline which removed non-textual elements, retaining only the core textual content of each article. This step was crucial to prevent noise from affecting the embedding generation and subsequent topic modeling.
+
+For generating embeddings, we utilized the \code{prdev/mini-gte} model developed by QTACK \cite{minigte} in early 2025. This distilled version of the original General Text Embeddings (GTE) model \cite{GTE} achieved remarkable performance in the MTEB v2 English Benchmark \cite{muennighoff2022mteb}, outperforming larger models and ensuring efficient use of memory and computational resources. This was especially suitable for our large dataset of Medium articles, allowing us to generate high-quality embeddings without prohibitive resource consumption.
+
+\subsection{Methodology}
+
+We conducted topic modeling through density-based clustering on a low-dimensional manifold learned from sentence embeddings. The overall workflow consists of the following steps:
+
+\begin{itemize}
+
+    \item \textbf{Inputs and balanced sampling}: Two embedding matrices are loaded—one for free articles and one for member-only articles—along with a metadata file containing per-article labels and titles. To address class imbalance, we applied stratified sampling, selecting \code{N\_SAMPLES\_PER\_CLASS = 11000} articles from each class.
+
+    \item \textbf{Manifold learning}: The sampled embeddings are reduced to three dimensions using UMAP \cite{mcinnes2020umapuniformmanifoldapproximation} with parameters \code{n\_neighbors = 20}, \code{min\_dist = 0}, and \code{n\_components = 3}. The low \code{min\_dist} setting promotes the formation of tight, well-separated clusters to support subsequent density-based clustering, with 3D components preserving sufficient structure for analysis and visualization.
+
+    \item \textbf{Density-based clustering}: DBSCAN \cite{DBSCAN} is applied to the 3D UMAP coordinates with \code{eps = 0.3} and \code{min\_samples = 150}. This non-parametric method automatically determines the number of clusters and identifies noise (label \code{-1}), making it well-suited for the heterogeneous nature of web text, where not all articles align with dominant themes.
+
+    \item \textbf{Topic labeling from representative titles}: For each non-noise cluster, 50 representative article titles are uniformly sampled across the cluster's UMAP extent. These titles are used to manually assign human-readable topic names that capture the cluster's thematic core.
+
+    \item \textbf{2D visualization}: Non-noise 3D UMAP coordinates are further projected into two dimensions using t-SNE (\code{perplexity = 30}, \code{learning\_rate = 200}, \code{random\_state = 42}). The resulting 2D scatter plot displays clusters with convex hulls, color-coded by the within-cluster free-to-paid article ratio.
+
+    \item \textbf{Hypothesis tests within clusters}: Let $Y_i \in \{0,1\}$ indicate whether article $i$ is free (1) or paid (0), with $p_0 = 0.5$ representing the overall free proportion in the full embedding population. For each non-noise cluster $c$, we evaluated $H_0: \mathbb{E}[Y\,|\,c] = p_0$ against the two-sided alternative. The complete results can be viewed in Table~\ref{tab:topic_proportions}.
+
+\end{itemize}
+
+\subsection{Results}
+
+Figure \ref{fig:2d_clusters} presents the 2D t-SNE visualization of the clustered articles, with color coding to indicate the proportion of free articles within each cluster. A clear gradient emerges from left to right, with clusters on the left predominantly free (green) and those on the right predominantly paid (red). The thematic labels assigned to each cluster reveal that this gradient corresponds to a shift from tech-based topics (e.g., software engineering, cloud computing, AI) to more personal and lifestyle-oriented themes (e.g., relationships, personal growth, health).
+
+We further grouped the identified clusters into higher-level themes based on their labels. Table~\ref{tab:higher_level_clusters} summarizes these themes, along with their sizes, average share of free articles, and variances. In this table, the previously observed gradient is reinforced: technical themes such as "Emerging Tech \& Engineering" exhibit higher average ratio (0.635), while personal themes like "Health \& Well-being" show a lower ratio (0.167).
+
+A special mention goes to the "Crypto \& Web3" cluster, which stands out with the highest mean free proportion of 0.862. This suggests that articles in this domain are mostly free.
+
+Statistical significance was assessed for each cluster using one-sample t-tests comparing the proportion of free articles within the cluster to the overall population proportion of 0.5. Almost all clusters exhibited highly significant deviations ($p < 0.05$), indicating that the distribution of free versus paid articles is not uniform across topics. This further supports the notion that the topic of an article is strongly associated with its premium status on Medium.com.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/2D_Cluster_Free_Paid_Ratio.png}
+    \caption{2D Visualization of Topic Clusters illustrating the Ratio of Free to Paid Articles. The Color Gradient from Green to Red indicates Increasing Proportion of Paid Articles within Each Cluster.}
+    \label{fig:2d_clusters}
+\end{figure}
+
+\begin{table}[H]
+    \centering
+        \label{tab:higher_level_clusters}
+        \begin{tabular}{l r r r}
+            \toprule
+            \textbf{Theme} & \textbf{Size} & \textbf{Mean Free} & \textbf{Variance} \\
+            \midrule
+            Crypto \& Web3 & 1,489 & 0.862 & 0.119 \\
+            Emerging Tech \& Engineering & 5,746 & 0.635 & 0.225 \\
+            Product, Business \& Growth & 1,973 & 0.521 & 0.239 \\
+            Society, Culture \& Global & 1,487 & 0.331 & 0.217 \\
+            Personal \& Emotional Life & 2,515 & 0.240 & 0.183 \\
+            Health \& Well-being & 492 & 0.167 & 0.144 \\
+            Creativity \& Curiosity & 1,358 & 0.520 & 0.216 \\
+            \bottomrule
+        \end{tabular}
+        \caption{Summary of Higher-Level Topic Clusters with Mean Free Proportions}
+\end{table}
+
+\subsection{Discussion}
+
+Our embedding-based topic modeling reveals a pronounced thematic divide on Medium.com, with technical domains like "Crypto \& Web3" and "Emerging Tech \& Engineering" predominantly free (e.g., 86.2\% free in crypto), potentially to foster community engagement and attract a broad readership. Conversely, personal and lifestyle themes such as "Health \& Well-being" and "Relationship Dynamics" lean heavily toward paid content (e.g., 16.7\% free in health), suggesting authors monetize intimate or specialized narratives. The t-SNE visualization's left-to-right gradient underscores this shift from collaborative tech discourse to introspective storytelling, supported by highly significant t-test results (p < 0.001 for most clusters), indicating topic choice strongly predicts premium status.
+
+Beyond engagement disparities, this pattern may reflect Medium's ecosystem dynamics: free tech articles could serve as lead magnets for building author followings, while paid personal content caters to readers seeking depth or exclusivity. However, limitations include potential biases in embedding models toward mainstream topics and the subjective nature of cluster labeling. 

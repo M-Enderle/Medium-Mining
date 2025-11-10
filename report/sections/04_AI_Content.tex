@@ -1,0 +1,97 @@
+\section{Text analysis}
+
+\subsection{AI Generated Content}
+
+Since the public accessibility of Large Language Models, the question arises, whether blog posts are human-written or at least partially AI generated. 
+Detecting AI-content is not an easy task, as the detection itself is an AI-based challenge. 
+We tested several AI-detection models from the RAID benchmark \cite{raid} on a custom text, which we additionally rewrote using popular Large Language Models. 
+While most models on the benchmark exhibited high false positive rates, SuperAnnotate's "ai-detector-low-fpr" showed comparatively improved performance.
+Its modelcard can be found on Huggingface \cite{huggingfaceSuperAnnotateaidetectorlowfprHugging}.
+
+\subsubsection{Methology}
+
+Given that most of the articles in our dataset exceed the maximum input length of AI detection models, we adopted a three-stage approach. 
+In the first stage, we preprocessed the texts to remove markdown elements. 
+
+In the second stage, we split each article into sentences that were individually analyzed for AI-generated text:
+
+\begin{equation}
+    S_{\text{sentence}}(w_k) = \frac{S_{c(w_k)}}{\left| c(w_k) \right|}
+\end{equation} 
+
+\begin{itemize}
+    \item $S_{\text{sentence}}(w_k)$: Final score for the $k$-th word.
+    \item $c(w_k)$: The single chunk (sentence) that contains word $w_k$.
+    \item $S_{c(w_k)}$: The raw model score for that specific chunk.
+\end{itemize}
+
+In the third stage, we applied a sliding-window approach. A chunk size of approximately 7-9 words was used:
+
+\begin{equation}
+    S_{window}(w_k) = \frac{\sum_{i=0}^{m-1} \sum_{j=0}^{|c_i|-1} S_i \cdot \delta(i+j, k)}{\sum_{i=0}^{m-1} \sum_{j=0}^{|c_i|-1} \delta(i+j, k)}
+\end{equation}
+\begin{itemize}
+    \item $S_{\text{window}}(w_k)$: Final score for the $k$-th word in the text.
+    \item $k$: Index of the target word in the full text.
+    \item $i$: Index of chunk.
+    \item $j$: Index of a word within chunk $c_i$.
+    \item $m$: Total number of chunks.
+    \item $|c_i|$: Number of words in chunk $c_i$.
+    \item $S_i$: Model score for the entire chunk $c_i$.
+    \item $\delta(i+j, k)$: Kronecker delta (1 if $i+j=k$, else 0).
+\end{itemize}
+
+The resulting scores from both approaches then are aggregated and normalized:
+
+\begin{equation}
+    S_{final} = \frac{S_{avg-window} + S_{avg-sentence}}{2}
+\end{equation}
+We visualize on a per-word basis in Figure \ref{fig:ai_score_vis}. For article comparision, we computed the mean of the per-word scores, denoted as \textit{average AI score}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/ai_score_vis.png}
+    \caption{Visualization of AI Scores on a Per-Word basis. Green indicates low AI Likelihood (low Score), Black represents Uncertainty (score $\approx$ 0.5), and Red denotes high AI Likelihood (high Score).}
+    \label{fig:ai_score_vis}
+\end{figure}
+
+\subsubsection{Descriptive Statistics and Hypothesis Testing}
+
+For a fair comparison between free and paid articles, we balanced the dataset by sampling from the free articles to match the number of paid ones.
+
+The descriptive statistics for the AI-generated content are summarized in Table \ref{tab:ai_scores_summary}:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{lccc}
+    \toprule
+    \textbf{Article Type} & \textbf{Mean} & \textbf{Median} & \textbf{Standard Deviation} \\
+    \midrule
+    Paid & 0.392 & 0.383 & 0.119 \\
+    Free & 0.389 & 0.381 & 0.130 \\
+    \bottomrule
+    \end{tabular}
+    \caption{Summary of AI-generated content scores by article type.}
+    \label{tab:ai_scores_summary}
+\end{table}
+
+Additionally, a two-sample t-test was conducted to assess whether the observed differences in average AI scores between free and paid articles were statistically significant. The t-test results indicate a t-statistic of \textbf{-1.844} and a p-value of \textbf{0.065}. While the mean AI-generated score for paid articles is slightly higher than for free articles, this difference is not statistically significant at the 95\% level.
+
+\subsubsection{Distribution Over Time}
+
+To explore temporal trends in AI-generated content, articles were grouped into half-year periods from 2017 onwards. The analysis reveals a slight upwards trend from 2017 to 2025. Between 2017 and 2022, average AI scores remained stable around 0.33-0.38, suggesting human-written texts and a low, text-inherent false positive rate. The outliers may be explained by the closed beta access to ChatGPT and other language models.
+A marked rise appears after late 2022, when ChatGPT became publicly available, and further after March 2023, when the ChatGPT API (gpt-3.5-turbo) was released to the wider public.
+Figure \ref{fig:ai_scores_over_time} presents the distribution of AI scores for both article types across half-year intervals. 
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{images/ai_score_boxplot_half_year.png}
+\caption{Distribution of AI-generated content scores across half-year periods for free and paid articles.}
+\label{fig:ai_scores_over_time}
+\end{figure}
+
+\subsubsection{Discussion}
+
+Our analysis indicates that AI-generated content is present in both free and paid articles, but the difference in prevalence between the two types is small and not statistically significant. The slight upwards trend over time suggests that, despite the growing availability of AI text-generation tools, there has been a small but not dramatic increase in AI-generated content within the dataset period.f
+
+The methodology of combining sentence-level detection with a sliding-window approach ensures that even long articles exceeding model input limits can be analyzed effectively. However, the inherent limitations of current AI detectors, including sensitivity to adversarial patterns and sampling strategies, mean that AI-score estimates should be interpreted with caution.
