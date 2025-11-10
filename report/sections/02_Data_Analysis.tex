@@ -6,7 +6,7 @@ Our initial scraping process, initiated from the 32 million URLs derived from th
 
 \subsubsection*{Ensuring a Fair Comparison}
 
-Medium.com introduced the ability for paid memberships in early 2017. As we want to ensure comparability between free and paid articles, taking into account any articles published before this date would introduce a significant bias. Furthermore, to allow for sufficient adoption of the commercial plan by authors and stabilize publication patterns, we only consider articles published after the first of January 2020. This filtering is illustrated in Figure~\ref{fig:articles_per_month}, which shows the distribution of articles per month from 2020 to 2025, highlighting the increasing proportion of paid content over time.
+Medium.com introduced the ability for paid memberships in early 2017 \cite{etherington_medium_2017}. To ensure comparability between free and paid articles, including any articles published before this date was avoided as it would introduce a significant bias. Furthermore, to allow for sufficient adoption of the commercial plan by authors and stabilization of publication patterns, we only included articles published after January 1, 2020. This filtering is illustrated in Figure~\ref{fig:articles_per_month}, which shows the distribution of articles per month from 2020 to 2025, highlighting the increasing proportion of paid content over time.
 
 This filtering step resulted in a final analysis dataset of $\mathbf{33,510}$ articles published between January 2020 and May 2025, contributed by $\mathbf{24,639}$ unique authors, and containing a total of $\mathbf{83,064}$ responses.
 
@@ -40,7 +40,7 @@ Table \ref{tab:descriptive_stats} presents the core descriptive statistics for t
         & Free & 22,248 & 5.9 & 5.0 & 3.2 \\
         \bottomrule
     \end{tabular}
-    \caption{Descriptive Statistics for Key Metrics (Post-Jan 2020)}
+    \caption{Descriptive Statistics for Key Statistical Metrics of Articles}
 \end{table}
 
 \subsubsection{Hypothesis Testing (Two-Sample t-tests)}
@@ -49,7 +49,7 @@ Due to the observed differences in mean engagement metrics and reading time, we 
 
 The null hypothesis ($H_0$) for each test is that there is no difference between the means of paid and free articles for a given metric ($\mu_{paid} = \mu_{free}$).
 
-The results of the t-tests, presented in Table \ref{tab:t_test_results}, reveal statistically significant differences between paid and free articles for all examined metrics. For clap count and response count, the t-statistics exceed 50, with p-values effectively at zero, indicating extremely strong evidence against the null hypothesis of no difference in means. This suggests that paid articles have substantially higher levels of engagement compared to free articles. Similarly, for the reading time, the t-statistic of 2.26 yields a p-value of 0.0235, which, while below the conventional 0.05 threshold, indicates a marginally significant difference, implying that paid articles are, on average, slightly longer in reading time than free ones. These findings underscore the potential impact of premium status on content engagement and length within the Medium.com ecosystem.
+The results of the t-tests, presented in Table \ref{tab:t_test_results}, reveal statistically significant differences between paid and free articles for all examined metrics. For clap count and response count, the t-statistics exceed 50, with p-values effectively at zero, indicating extremely strong evidence against the null hypothesis of no difference in means. This suggests that paid articles have substantially higher levels of engagement compared to free articles. Similarly, for the reading time, the $t$-statistic of $2.26$ yields a $p$-value of $0.0235$, which is below the conventional $0.05$ threshold, indicating a marginally significant difference and implying that paid articles are, on average, slightly longer in reading time than free ones. These findings underscore the potential impact of premium status on content engagement and length within the Medium.com ecosystem.
 
 \begin{table}[H]
     \centering
@@ -63,10 +63,10 @@ The results of the t-tests, presented in Table \ref{tab:t_test_results}, reveal 
         Reading Time (min) & 2.264893 & 0.023528 \\
         \bottomrule
     \end{tabular}
-    \caption{Two-Sample T-Test Results for Key Metrics}
+    \caption{Two-Sample T-Test Results for Key Metrics of Articles}
 \end{table}
 
 
 \subsection{Discussion}
 
-Paid articles on Medium.com generate far greater reader engagement than free ones, reflecting stronger audience investment in premium content. This gap suggests that the paywall not only filters for higher-quality or more committed writing but also supports deeper interaction between authors and readers. Overall, the premium model appears to drive both greater visibility and meaningful participation within the platforms ecosystem.
+Paid articles on Medium.com generate far greater reader engagement than free ones, reflecting stronger audience investment in premium content. This gap suggests that the paywall not only filters for higher-quality or more committed writing but also supports deeper interaction between authors and readers. Overall, the premium model appears to drive both greater visibility and meaningful participation within the platform's ecosystem.

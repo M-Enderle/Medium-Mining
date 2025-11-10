@@ -1,8 +1,19 @@
+\phantomsection
 \section*{Abstract}
 \addcontentsline{toc}{section}{Abstract}
+As a publishing platform, Medium.com allows authors to both share and monetize their work. 
+Consequently, content on the platform exists in two forms: free articles and subscriber-only content.
+From a reader’s perspective, this raises the question of whether a membership subscription is worth purchasing, given that anyone can publish and that no peer-review process is in place.
+This report examines linguistic, structural, and thematic differences between free and paid articles to assess whether Medium’s subscription model offers tangible value to readers.
 
-This report analyzes differences between paid (member-only) and free articles on Medium.com. To enable this comparison, we developed a custom data acquisition pipeline to scrape and structure a novel dataset of 65,248 articles. After filtering to ensure content comparability, our final analysis dataset comprised 33,510 articles. We employed statistical analysis (two-sample t-tests), embedding-based topic modeling (UMAP, DBSCAN), and NLP-based text analysis to compare engagement, thematic focus, and writing quality (grammatical correctness and AI-generated content) between paid and free content.
+To enable this comparison, we developed a custom data acquisition pipeline to scrape, structure and filter a novel dataset of 33,510 articles.
+We employed statistical analysis (two-sample t-tests), embedding-based topic modeling (UMAP, DBSCAN), and NLP-based text analysis to compare engagement, thematic focus, and writing quality (grammatical correctness and AI-generated content) between paid and free content.
 
-Our results demonstrate significant disparities. Paid articles receive substantially higher engagement in terms of "claps" (mean: 407.9 vs. 122.4) and responses (mean: 4.9 vs. 1.2), with both differences being highly statistically significant (p < 0.001). Topic modeling revealed a strong thematic divide: technical topics such as "Crypto \& Web3" (86.2\% free) and "Emerging Tech" (63.5\% free) are predominantly free, while personal and lifestyle themes like "Health \& Well-being" are largely monetized (16.7\% free). Text analysis showed that while paid articles have a statistically significant lower number of grammar errors (p < 0.001), the practical effect size is small (d = 0.1167). We found no statistically significant difference in the prevalence of AI-generated content (p = 0.065).
+Our results demonstrate significant disparities. 
+Paid articles receive substantially higher engagement in terms of "claps" (mean: 407.9 vs. 122.4) and responses (mean: 4.9 vs. 1.2), with both differences being highly statistically significant. 
+Topic modeling revealed a strong thematic divide: technical topics such as "Crypto \& Web3" (86.2\% free) and "Emerging Tech" (63.5\% free) are predominantly free, while personal and lifestyle themes like "Health \& Well-being" are largely monetized (16.7\% free). 
+Text analysis showed that while paid articles have a statistically significant lower number of grammar errors, the practical effect size is small. 
+We found no statistically significant difference in the prevalence of AI-generated content.
 
-We conclude that an article's topic is a primary differentiator between paid and free content on Medium, more so than grammatical quality or the use of AI tools. The platform's ecosystem appears structured to favor monetization for personal and lifestyle content, while technical topics are more frequently used to build a free audience.
+We conclude that an article's topic is a primary differentiator between paid and free content on Medium, more so than grammatical quality or the use of AI tools. 
+The platform's ecosystem appears structured to favor monetization for personal and lifestyle content, while technical topics are more frequently used to build a free audience.

@@ -1,17 +1,17 @@
 \subsection{Grammar Analysis}
 
-While content quality can be influenced by topic, author expertise, and stylistic choices, grammatical correctness remains a central indicator of writing quality and editorial oversight. Especially in the case of paid articles, we expect them to be subject to more rigorous editorial and review processes.
+While content quality can be influenced by topic, author expertise, and stylistic choices, grammatical correctness remains a central indicator of writing quality and editorial oversight. We specifically expect paid articles to be subject to more rigorous editorial and review processes.
 
 \subsubsection{Methodology}
-To analyze grammar errors, we use \texttt{LanguageTool} for python \cite{languagetool}, an open-source grammar and style checker capable of identifying a wide range of linguistic issues. 
-The articles were preprocessed to remove markdown elements, code snippets, and other non-linguistic components, before being processed in full. We exclude certain linguistic rules from the detector, as they frequently produce false positives. Additionally, we omit spelling errors, since domain-specific terms (e.g., \texttt{fastapi} in the programming domain) are often incorrectly flagged as misspellings.
-We call the total number of detected issues per article \textit{grammar\_error\_count}
+To analyze grammar errors, we used \texttt{LanguageTool} for python \cite{languagetool}, an open-source grammar and style checker capable of identifying a wide range of linguistic issues. 
+The articles were preprocessed to remove markdown elements, code snippets, and other non-linguistic components, before being processed in full. We excluded certain linguistic rules from the detector, as they frequently produce false positives. Additionally, we excluded spelling errors, because domain-specific terms (e.g., \texttt{fastapi} in the programming domain) are often incorrectly flagged as misspellings.
+The total number of detected issues per article **is defined as** the \textit{grammar\_error\_count}
 
 \subsubsection{Descriptive Statistics and Hypothesis Testing}
 The descriptive analysis indicates a higher mean grammar error count in free articles ($\mu_\text{free} = 16.85$) compared to paid articles ($\mu_\text{paid} = 12.84$), as well as a higher standard deviation among free articles.
 
 To formally assess this difference, we conducted a two-sample Welch's t-test, using a sample size equal to that of the smaller group (paid articles) to ensure a fair comparison. Our null hypothesis ($H_0$) posits no difference in mean grammar counts between free and paid articles $\left(\mu_\text{free} = \mu_\text{paid}\right)$.
-The test yielded a large absolute t-value (t = 9.9961) and a very small p-value (p = $1.15 \times 10^{-23}$), leading us to reject $H_0$ and conclude that the difference is statistically significant. 
+The test yielded a large absolute t-value (t = 9.9961) and a very small p-value (p = $1.15 \times 10^{-23}$), which led us to reject $H_0$ and conclude that the difference is statistically significant. 
 
 We further evaluated the effect size using Cohen's d and Hedges' g, which indicated a small difference of \textbf{0.1167} standard deviations, suggesting that the practical magnitude of this difference is limited. 
 
@@ -26,13 +26,13 @@ To further understand the nature of the differences identified in the t-test, we
     \label{fig:average_grammar_errors_per_word}
 \end{figure}
 
-The visualization reinforces the overall findings: free articles exhibit a higher mean error count in the vast majority of categories. This gap is particularly evident in high-frequency error types such as typography errors (\texttt{TYPOGRAPHY}: 7.08 vs. 5.45) and american/british english errors (\texttt{TYPOS}: 2.33 vs. 1.12).
+The visualization reinforces the overall findings: free articles exhibit a higher mean error count in the vast majority of categories. This gap is particularly evident in high-frequency error types such as typography errors (\texttt{TYPOGRAPHY}: 7.08 vs. 5.45) and American/British English errors (\texttt{TYPOS}: 2.33 vs. 1.12).
 
 A notable exception to this pattern emerges in style-related categories. Paid articles show a higher average error count for repetitions in the text (\texttt{REPETITIONS\_STYLE}: 0.88 vs. 0.48). A similar, though less pronounced, trend is observed for redundancy (\texttt{REDUNDANCY}: 0.34 vs. 0.29) and general style errors (\texttt{STYLE}: 0.21 vs. 0.16). The complete results can be viewed in Appendix \ref{app:list}
 
 \subsubsection{Discussion}
-The results of the Welch's t-test confirm our initial hypothesis that paid articles do contain a statistically significant lower number of mean grammar errors compared to free articles, which may be explained by a more effective editorial or review process. However, the effect size is small, which suggests that while the differnence is real and consistent across the sample, the practical distinction in quality, as percieved by the human reader, may be minimal. Paid status is a significant predictor of lower error counts, but its not a strong one.
+The results of the Welch's t-test confirm our initial hypothesis that paid articles contain a statistically significant lower number of mean grammar errors compared to free articles, which may be explained by a more effective editorial or review process. However, the effect size is small, which suggests that while the difference is real and consistent across the sample, the practical distinction in quality, as percieved by the human reader, may be minimal. Paid status is a significant predictor of lower error counts, but it is not a strong one.
 
-The categorical error distribution gives a better understanding and indicates that the nature of errors differs between the two content types. Free articles show higher error rates in foundational grammar, whereas paid articles often use repetitions and redundancy.
+The categorical error distribution provides a better understanding and indicates that the nature of errors differs between the two content types. Free articles exhibit higher error rates in foundational grammar, whereas paid articles exhibit more repetitions and redundancy.
 
-In summary, while our analysis confirms that paid articles exhibit fewer mechanical grammar errors, the effect size and the differences in style-based errors suggest a more complex relationship. The editorial process for paid articles may be primarily focused on correcting foundational grammatical errors, while being more prone to stylistic choices that automated tools flag as problematic.
+In summary, while our analysis confirms that paid articles exhibit fewer mechanical grammar errors, the effect size and the differences in style-based errors suggest a more complex relationship. The editorial process for paid articles may be primarily focused on correcting foundational grammatical errors, while they may be more prone to stylistic choices that automated tools flag as problematic.
