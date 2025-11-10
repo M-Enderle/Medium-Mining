@@ -623,6 +623,4 @@ For questions, issues, or contributions, please:
 
 **Built with ❤️ using Python, Playwright, DuckDB, and PyTorch**
 
-For detailed methodology and results, see [report/report.tex](report/report.tex)
-
 </div>
