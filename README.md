@@ -30,6 +30,8 @@ This project analyzes Medium.com articles to identify engagement differences bet
 **Analysis Period**: 2020-2025 (post-membership adoption)
 **Final Dataset**: 33,510 articles | 24,639 authors | 83,064 responses
 
+![Articles Per Month Distribution](./report/images/articles_per_month.png)
+
 | Metric | Paid | Free |
 |--------|------|------|
 | Count | 11,262 (33.6%) | 22,248 (66.4%) |
@@ -53,6 +55,8 @@ Two-sample t-tests revealed **statistically significant differences** across all
 
 **Methodology**: Embeddings (mini-gte) → UMAP (3D) → DBSCAN clustering → t-SNE visualization
 
+![2D Cluster Visualization](./report/images/2D_Cluster_Free_Paid_Ratio.png)
+
 **Key Finding**: Clear gradient from technical topics (predominantly free) to personal topics (predominantly paid)
 
 | Theme | Size | % Free | % Paid | Significance |
@@ -73,10 +77,14 @@ Two-sample t-tests revealed **statistically significant differences** across all
 
 **Methodology**: SuperAnnotate's "ai-detector-low-fpr" model with sentence-level + sliding-window scoring
 
+![AI Score Visualization](./report/images/ai_score_vis.png)
+
 | Article Type | Mean AI Score | Median | Std. Dev. | p-value |
 |--------------|---------------|--------|----------|---------|
 | Paid | 0.392 | 0.383 | 0.119 | 0.065 (ns) |
 | Free | 0.389 | 0.381 | 0.130 | |
+
+![AI Scores Over Time](./report/images/ai_score_boxplot_half_year.png)
 
 **Finding**: No statistically significant difference in AI-generated content (p = 0.065). Slight upward trend after ChatGPT release (late 2022).
 
@@ -85,6 +93,8 @@ Two-sample t-tests revealed **statistically significant differences** across all
 ## Grammar Analysis Results
 
 **Methodology**: LanguageTool for grammar/style error detection
+
+![Grammar Errors Distribution](./report/images/average_grammar_errors_per_word.png)
 
 | Metric | Paid | Free | Effect Size |
 |--------|------|------|-------------|
