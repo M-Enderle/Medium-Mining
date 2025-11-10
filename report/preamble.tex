@@ -1,0 +1,81 @@
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{lmodern} % scalable fonts for microtype
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage[numbers]{natbib}
+\usepackage{minted}
+\usepackage{csquotes}
+
+% Page setup
+\geometry{margin=2.5cm}
+\setlength{\parskip}{0.6em}
+\setlength{\parindent}{0pt}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Medium Mining}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+% Section formatting (more academic look)
+\titleformat{\section}{\large\bfseries}{\thesection}{0.75em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{\thesubsubsection}{0.5em}{}
+
+% Code listing setup
+\definecolor{codegreen}{rgb}{0,0.5,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.95}
+\definecolor{mediumpurple}{HTML}{5038A5}
+\definecolor{mediumblue}{HTML}{005F99}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{mediumblue},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showstringspaces=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% Hyperlinks
+\hypersetup{
+    colorlinks=true,
+    linkcolor=mediumpurple,
+    citecolor=mediumblue,
+    urlcolor=mediumblue,
+    pdftitle={Comparative Analysis of Paid and Free Articles on Medium.com},
+    pdfauthor={Moritz Enderle}
+}
+
+% Custom commands
+\newcommand{\todo}[1]{\textcolor{red}{\textbf{TODO:} #1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\important}[1]{\textbf{#1}}
+
+% table of contents
+\usepackage{tocloft}
+\setlength{\cftbeforesecskip}{26pt}
+\setlength{\cftbeforesubsecskip}{13pt}
+\setcounter{tocdepth}{2}
