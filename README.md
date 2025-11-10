@@ -5,7 +5,6 @@
 **Analyzing 33,510 Medium.com articles (2020-2025) to understand engagement patterns and monetization strategies**
 
 ![Articles Analyzed](https://img.shields.io/badge/articles%20analyzed-33%2C510-informational)
-![Paid vs Free](https://img.shields.io/badge/paid-33.6%25%20%7C%20free-66.4%25-blue)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
