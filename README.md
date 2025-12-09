@@ -2,11 +2,7 @@
 
 <div align="center">
 
-**Analyzing 33,510 Medium.com articles (2020-2025) to understand engagement patterns and monetization strategies**
-
-![Articles Analyzed](https://img.shields.io/badge/articles%20analyzed-33%2C510-informational)
-![Python](https://img.shields.io/badge/python-3.12-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+**Analyzing 65,248 Medium.com articles (2020-2025) to understand engagement patterns and monetization strategies**
 
 </div>
 
@@ -27,7 +23,7 @@ This project analyzes Medium.com articles to identify engagement differences bet
 
 **Raw Dataset**: 65,248 scraped articles
 **Analysis Period**: 2020-2025 (post-membership adoption)
-**Final Dataset**: 33,510 articles | 24,639 authors | 83,064 responses
+**Final Dataset**: 65,248 articles | 24,639 authors | 83,064 responses
 
 ![Articles Per Month Distribution](./report/images/articles_per_month.png)
 
